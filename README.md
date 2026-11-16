@@ -23,3 +23,12 @@ In development (16–30 Nov 2026). Everything in this repo is being built during
 ## Licence
 
 [Apache-2.0](LICENSE)
+
+## Run locally
+
+1. Install Node.js 20 or newer, then run `npm install`.
+2. Copy `.env.example` to `.env.local` and fill it in (see the comment at the top of the file). Never commit `.env.local`.
+3. Run `npm run dev` and open the URL it prints.
+4. Tests: `npm test` (logic) and `npm run test:rules` (Firestore security rules on the local emulator, needs Java 21 or newer).
+
+Firebase project: `buildhybridai-32b9d`. Sign-in: Google. Database: Cloud Firestore, which stores scan summaries only (risk level, categories, date) and never contract text.

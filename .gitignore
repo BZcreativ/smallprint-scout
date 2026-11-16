@@ -6,3 +6,8 @@ dist/
 .firebase/
 *.log
 .DS_Store
+dist-ssr/
+*.local
+.vscode/*
+!.vscode/extensions.json
+.idea/
