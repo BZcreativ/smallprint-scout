@@ -24,7 +24,8 @@
 ## Global Constraints
 
 - App root: the repo root (https://github.com/BZcreativ/smallprint-scout). All paths below are relative to it.
-- Firebase JS SDK `firebase` ≥ 12.5.0. Backend: `new GoogleAIBackend()` (Gemini Developer API).
+- Firebase JS SDK `firebase` ≥ 12.5.0. Backend: `getAI(firebaseApp, { backend: new GoogleAIBackend(), useLimitedUseAppCheckTokens: true })` (Gemini Developer API). Without limited-use tokens, generative models return `HTTP 403: "To access this model, you must enforce Firebase App Check"`. Source: `.agents/skills/firebase-ai-logic-basics/references/usage_patterns_web.md`.
+- Coding agents: use the Firebase agent skills in `.agents/skills/` (installed with `npx skills add firebase/agent-skills --agent=antigravity`). They cover AI Logic, Hosting, Remote Config and Auth.
 - On-device needs Chrome desktop ≥ 139 with `chrome://flags/#prompt-api-for-gemini-nano-multimodal-input` enabled.
 - Cloud model: `"gemini-3.8-flash"` for both hybrid fallback and grounded research.
 - Input: minimum 80, maximum 6,000 characters. On-device token limit is 9,216.
