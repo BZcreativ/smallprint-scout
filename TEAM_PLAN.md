@@ -9,7 +9,7 @@ If the extension runs late, we submit the website alone. That still qualifies.
 
 | | **Alex = Builder** (rename) | **Sam = Product & Test** (rename) |
 |---|---|---|
-| Main job | Works with the AI coding assistant (Claude Code) to build each task in the plan | Everything that isn't code: accounts, Firebase console, test contracts, testing, story, video, Devpost |
+| Main job | Works with the AI coding assistant (Antigravity CLI, `agy`) to build each task in the plan | Everything that isn't code: accounts, Firebase console, test contracts, testing, story, video, Devpost |
 | Owns | GitHub repo `BZcreativ/smallprint-scout` | Firebase project, Devpost entry, YouTube, Chrome Web Store listing |
 | Done means | The assistant says the tests pass, and the work is saved (committed) | Sam has tried it in Chrome and it matches the checklist |
 
@@ -17,7 +17,7 @@ If the extension runs late, we submit the website alone. That still qualifies.
 
 ## How the Builder works with the coding assistant
 
-1. Open Claude Code in the project folder (the clone of `smallprint-scout`).
+1. Open a terminal in the project folder (the clone of `smallprint-scout`) and run `agy`. It reads `AGENTS.md` automatically, and the Firebase skills in `.agents/skills/`.
 2. Type: `Do Task N of docs/plans/2026-11-16-smallprint-scout.md. Stop when its tests pass, commit, and tell me in plain English what Sam should check in Chrome.`
 3. Do **one task per session**. Start a fresh session for the next task.
 4. Stuck for more than 45 minutes? Copy the exact error and ask the assistant "explain this simply and fix it". If that fails, ask it to "go back to the last commit". A commit is a save point, so nothing is lost.
