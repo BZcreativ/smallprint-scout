@@ -13,6 +13,7 @@ export interface RedactionGateProps {
   purpose: "hybrid" | "research";
   onConfirm: (text: string, jurisdiction?: JurisdictionId) => void;
   onCancel: () => void;
+  busy?: boolean;
 }
 
 function maskedLabel(count: number): string {
@@ -21,7 +22,7 @@ function maskedLabel(count: number): string {
   return `${count} items masked`;
 }
 
-export function RedactionGate({ initialText, purpose, onConfirm, onCancel }: RedactionGateProps) {
+export function RedactionGate({ initialText, purpose, onConfirm, onCancel, busy }: RedactionGateProps) {
   const [masked] = useState(() => redact(initialText));
   const [text, setText] = useState(masked.redactedText);
   const [jurisdiction, setJurisdiction] = useState<JurisdictionId>("UK");
@@ -69,10 +70,10 @@ export function RedactionGate({ initialText, purpose, onConfirm, onCancel }: Red
       )}
 
       <div className="actions">
-        <button className="primary" onClick={confirm} disabled={text.trim().length === 0}>
-          Confirm &amp; send this text to Google Gemini
+        <button className="primary" onClick={confirm} disabled={busy || text.trim().length === 0}>
+          {busy ? "Sending to Google Gemini…" : "Confirm & send this text to Google Gemini"}
         </button>
-        <button onClick={onCancel}>Cancel</button>
+        <button onClick={onCancel} disabled={busy}>Cancel</button>
       </div>
     </section>
   );

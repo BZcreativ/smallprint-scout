@@ -197,27 +197,33 @@ async function runScan(text: string, route: ScanRoute) {
             }
           : async (prompt: string) => {
               try {
-                return await models.hybrid.generateContent(prompt);
+                const res = await models.hybrid.generateContent(prompt);
+                if (/^On-device model is not available in Chromium/i.test(res.response.text().trim())) {
+                  throw new Error("Chromium stub");
+                }
+                return res;
               } catch {
                 // @firebase/ai PREFER_ON_DEVICE does not catch errors thrown by
-                // Chrome's on-device session, so fall back explicitly to cloudTriage.
+                // Chrome's on-device session (and Chromium's stub echoes input),
+                // so fall back explicitly to cloudTriage with a 25s timeout and
+                // fast gemini-3.5-flash-lite fallback on 503/timeout.
                 try {
-                  return await models.cloudTriage.generateContent(prompt);
+                  return await models.cloudTriage.generateContent(prompt, { timeout: 25000 });
                 } catch (cloudErr) {
                   const msg = cloudErr instanceof Error ? cloudErr.message : "";
-                  if (/503|deadline expired|unavailable/i.test(msg)) {
-                    return await models.cloudTriage.generateContent(prompt);
+                  if (/503|deadline expired|unavailable|timeout|abort/i.test(msg)) {
+                    return await models.cloudTriageFallback.generateContent(prompt, { timeout: 25000 });
                   }
                   throw cloudErr;
                 }
               }
             };
       // A truncated on-device answer is retried on the slim schema (local) or
-      // on cloudTriage (hybrid), not by re-asking the exact same way.
+      // on cloudTriageFallback (hybrid), not by re-asking the exact same way.
       const retry =
         route === "local"
           ? () => localFallbackGenerate(text)
-          : (prompt: string) => models.cloudTriage.generateContent(prompt);
+          : (prompt: string) => models.cloudTriageFallback.generateContent(prompt, { timeout: 25000 });
       const scan = await runFirstPassScan(text, generate, retry);
       setScreen({ name: "results", source: text, scan });
       await saveSummary(scan);
@@ -289,6 +295,7 @@ async function runScan(text: string, route: ScanRoute) {
           <RedactionGate
             initialText={gate.text}
             purpose={gate.purpose}
+            busy={busy}
             onConfirm={(text, jurisdiction) => {
               if (gate.purpose === "research") {
                 void runResearch(gate.text, text, jurisdiction ?? "UK", gate.scan);

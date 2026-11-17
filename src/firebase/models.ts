@@ -175,7 +175,20 @@ function createCloudModels(cloudModel: string) {
     },
   });
 
-  return { hybrid, grounded, draftHybrid, cloudTriage };
+  // Fast free-tier fallback when the primary cloud model returns 503 or times out.
+  const cloudTriageFallback = getGenerativeModel(ai, {
+    mode: InferenceMode.ONLY_IN_CLOUD,
+    inCloudParams: {
+      model: "gemini-3.5-flash-lite",
+      generationConfig: {
+        responseMimeType: "application/json",
+        responseSchema: triageSchema,
+        temperature: 0.1,
+      },
+    },
+  });
+
+  return { hybrid, grounded, draftHybrid, cloudTriage, cloudTriageFallback };
 }
 
 export function createModels(cloudModel: string = DEFAULT_CLOUD_MODEL) {
