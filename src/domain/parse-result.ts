@@ -14,9 +14,10 @@ export class ScanParseError extends Error {
 }
 
 export function parseTriage(text: string): TriageResult {
+  const cleaned = stripCodeFence(text);
   let parsed: unknown;
   try {
-    parsed = JSON.parse(text);
+    parsed = JSON.parse(cleaned);
   } catch {
     throw new ScanParseError("The model's answer was not valid JSON.");
   }
@@ -40,6 +41,12 @@ export function parseTriage(text: string): TriageResult {
     keyDates: asArray(record.keyDates).map(toKeyDate),
     unknowns: asArray(record.unknowns).filter((value): value is string => typeof value === "string"),
   };
+}
+
+function stripCodeFence(text: string): string {
+  const trimmed = text.trim();
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  return fenced ? fenced[1].trim() : trimmed;
 }
 
 function asString(value: unknown): string | undefined {

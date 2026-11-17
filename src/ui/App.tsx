@@ -116,7 +116,7 @@ export default function App() {
             documentType: toDocumentType(env.data.documentType),
             overallRisk: env.data.overallRisk,
             findingCategories: env.data.findings.map((f) => f.category),
-            route: env.route === "IN_CLOUD" ? "IN_CLOUD" : "ON_DEVICE",
+            route: env.route,
           }),
         );
         setHistoryVersion((version) => version + 1);
@@ -135,19 +135,30 @@ export default function App() {
     try {
       const generate =
         route === "local"
-          ? (prompt: string) => models.local.generateContent(prompt)
+          ? async (prompt: string) => {
+              try {
+                return await models.local.generateContent(prompt);
+              } catch (firstErr) {
+                if (firstErr instanceof ScanParseError) throw firstErr;
+                // Fallback if Chrome's constrained decoder rejects responseConstraint:
+                // still 100% ONLY_ON_DEVICE via models.draftLocal.
+                const fallbackPrompt = `${prompt}\n\nRespond ONLY with a valid JSON object containing keys: documentType ("SUBSCRIPTION_TERMS"|"FREE_TRIAL"|"PRIVACY_AI_CLAUSE"|"SERVICE_AGREEMENT"|"OTHER"), overallRisk ("LOW"|"MEDIUM"|"HIGH"), summary (string), findings (array of {category, severity, quote, plainEnglish, whyItMatters, nextStep, confidence}), keyDates (array of {event, dateOrTrigger, sourceQuote}), unknowns (array of strings).`;
+                return await models.draftLocal.generateContent(fallbackPrompt);
+              }
+            }
           : (prompt: string) => models.hybrid.generateContent(prompt);
       const scan = await runFirstPassScan(text, generate);
       setScreen({ name: "results", source: text, scan });
       await saveSummary(scan);
     } catch (e) {
+      const detail = e instanceof Error && e.message ? ` (${e.message})` : "";
       if (e instanceof ScanParseError) {
         setScanError("The model's answer came back incomplete. Try again.");
         setCanRetry(true);
       } else if (route === "local") {
-        setScanError("On-device scan failed. You can try the redacted cloud scan instead.");
+        setScanError(`On-device scan failed. You can try the redacted cloud scan instead.${detail}`);
       } else {
-        setScanError("The cloud scan failed. You can try again.");
+        setScanError(`The cloud scan failed. You can try again.${detail}`);
       }
     } finally {
       setBusy(false);

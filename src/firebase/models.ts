@@ -20,10 +20,27 @@ import { DEFAULT_CLOUD_MODEL, getCloudModelName, initRemoteConfig } from "./remo
 // the prompt text instead, so the on-device and cloud paths see the same
 // instructions (amendment A7).
 
-// `Schema#toJSON` is stripped from the public types, so serialise through
-// JSON.stringify, which calls it at runtime and yields the plain JSON schema
-// the Prompt API expects for `responseConstraint`.
-const responseConstraint = JSON.parse(JSON.stringify(triageSchema)) as object;
+// `Schema#toJSON` is stripped from the public types and includes OpenAPI-only
+// `nullable` properties that Chrome's Prompt API JSON Schema validator can
+// reject, so serialise and strip `nullable` before passing `responseConstraint`.
+function toJsonSchemaConstraint(schema: unknown): object {
+  const raw = JSON.parse(JSON.stringify(schema)) as Record<string, unknown>;
+  function stripNullable(node: unknown): unknown {
+    if (Array.isArray(node)) return node.map(stripNullable);
+    if (typeof node === "object" && node !== null) {
+      const out: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(node)) {
+        if (k === "nullable") continue;
+        out[k] = stripNullable(v);
+      }
+      return out;
+    }
+    return node;
+  }
+  return stripNullable(raw) as object;
+}
+
+const responseConstraint = toJsonSchemaConstraint(triageSchema);
 
 const ai = getAI(firebaseApp, {
   backend: new GoogleAIBackend(),
