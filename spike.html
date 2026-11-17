@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SmallPrint Scout: inference spike</title>
+  </head>
+  <body>
+    <main>
+      <h1>Inference spike</h1>
+      <p>
+        Run in Chrome desktop 139 or newer with
+        <code>chrome://flags/#prompt-api-for-gemini-nano-multimodal-input</code> enabled.
+      </p>
+      <p>
+        <label for="sample">Sample</label>
+        <select id="sample">
+          <option value="gym-membership">Gym membership (intro offer + rolling notice trap)</option>
+          <option value="subscription-renewal">Subscription renewal (auto-renewal + price hike)</option>
+          <option value="privacy-ai-terms">Privacy / AI training terms</option>
+        </select>
+      </p>
+      <p>
+        <button id="only-on-device">ONLY_ON_DEVICE</button>
+        <button id="prefer-on-device">PREFER_ON_DEVICE</button>
+        <button id="only-in-cloud">ONLY_IN_CLOUD + Google Search</button>
+      </p>
+      <pre id="output"></pre>
+    </main>
+    <script type="module" src="/src/spike.ts"></script>
+  </body>
+</html>
