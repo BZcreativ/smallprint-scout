@@ -142,7 +142,7 @@ function createCloudModels(cloudModel: string) {
         responseMimeType: "application/json",
         responseSchema: triageSchema,
         temperature: 0.1,
-        thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
       },
     },
   });
@@ -166,7 +166,7 @@ function createCloudModels(cloudModel: string) {
       model: cloudModel,
       generationConfig: {
         temperature: 0.2,
-        thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
       },
     },
   });
@@ -179,7 +179,7 @@ function createCloudModels(cloudModel: string) {
         responseMimeType: "application/json",
         responseSchema: triageSchema,
         temperature: 0.1,
-        thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
       },
     },
   });
@@ -193,7 +193,7 @@ function createCloudModels(cloudModel: string) {
         responseMimeType: "application/json",
         responseSchema: triageSchema,
         temperature: 0.1,
-        thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
       },
     },
   });
