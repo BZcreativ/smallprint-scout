@@ -184,10 +184,9 @@ function createCloudModels(cloudModel: string) {
     },
   });
 
-  // Fast free-tier fallback when the primary cloud model returns 503 or times
-  // out. `thinkingBudget: 0` disables thinking entirely (the SDK rejects a
-  // config that sets both thinkingBudget and thinkingLevel), which is the
-  // fastest route to valid JSON when the primary model is already struggling.
+  // Fast free-tier fallback when the primary cloud model returns 503, 429, or
+  // times out. Omit thinkingConfig so the lite model uses its native default
+  // without risking a 400 on model-specific thinking parameters.
   const cloudTriageFallback = getGenerativeModel(ai, {
     mode: InferenceMode.ONLY_IN_CLOUD,
     inCloudParams: {
@@ -196,7 +195,6 @@ function createCloudModels(cloudModel: string) {
         responseMimeType: "application/json",
         responseSchema: triageSchema,
         temperature: 0.1,
-        thinkingConfig: { thinkingBudget: 0 },
       },
     },
   });
