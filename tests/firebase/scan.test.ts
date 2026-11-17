@@ -1,5 +1,5 @@
 import { expect, test, vi } from "vitest";
-import { quotaDetail, runFirstPassScan, toRoute } from "../../src/firebase/scan";
+import { quotaDetail, rateLimitHint, runFirstPassScan, toRoute } from "../../src/firebase/scan";
 import { ScanParseError } from "../../src/domain/parse-result";
 
 // Sample 2 from docs/spec.md §5.
@@ -39,6 +39,24 @@ test("quotaDetail falls back to the bare message", () => {
   expect(quotaDetail(new Error("boom"))).toBe(" (boom)");
   expect(quotaDetail("not an error")).toBe("");
   expect(quotaDetail(new Error(""))).toBe("");
+});
+
+test("rateLimitHint detects the free-tier 429 quota error", () => {
+  const err = new Error(
+    "Error fetching from https://firebasevertexai.googleapis.com/...:generateContent: [429 ] You exceeded your current quota, please check your plan and billing details.",
+  );
+  expect(rateLimitHint(err)).toMatch(/5 scans per minute/);
+  expect(rateLimitHint(new Error("boom"))).toBeNull();
+  expect(rateLimitHint("not an error")).toBeNull();
+});
+
+test("parse failure retries on the provided retry model", async () => {
+  const gen = vi.fn().mockResolvedValue({ response: { text: () => "{" } });
+  const retryGen = vi.fn().mockResolvedValue({ response: { text: () => VALID_JSON, inferenceSource: "ON_DEVICE" } });
+  const r = await runFirstPassScan(SAMPLE, gen, retryGen);
+  expect(r.route).toBe("ON_DEVICE");
+  expect(gen).toHaveBeenCalledTimes(1);
+  expect(retryGen).toHaveBeenCalledTimes(1);
 });
 
 test("retries once then throws ScanParseError", async () => {
