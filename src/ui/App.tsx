@@ -201,7 +201,15 @@ async function runScan(text: string, route: ScanRoute) {
               } catch {
                 // @firebase/ai PREFER_ON_DEVICE does not catch errors thrown by
                 // Chrome's on-device session, so fall back explicitly to cloudTriage.
-                return await models.cloudTriage.generateContent(prompt);
+                try {
+                  return await models.cloudTriage.generateContent(prompt);
+                } catch (cloudErr) {
+                  const msg = cloudErr instanceof Error ? cloudErr.message : "";
+                  if (/503|deadline expired|unavailable/i.test(msg)) {
+                    return await models.cloudTriage.generateContent(prompt);
+                  }
+                  throw cloudErr;
+                }
               }
             };
       // A truncated on-device answer is retried on the slim schema (local) or

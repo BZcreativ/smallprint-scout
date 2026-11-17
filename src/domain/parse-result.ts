@@ -15,6 +15,11 @@ export class ScanParseError extends Error {
 
 export function parseTriage(text: string): TriageResult {
   const cleaned = stripCodeFence(text);
+  if (/^On-device model is not available in Chromium/i.test(cleaned)) {
+    throw new Error(
+      "On-device Gemini Nano requires Google Chrome 139+ desktop (this Chromium build echoes input instead of running a local model).",
+    );
+  }
   let parsed: unknown;
   try {
     parsed = JSON.parse(cleaned);
