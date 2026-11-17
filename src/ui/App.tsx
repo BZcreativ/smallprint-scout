@@ -4,8 +4,8 @@ import { signInWithGoogle, signOutUser, useAuthUser } from "../firebase/auth";
 import { clearScanHistory, listRecentScans, saveScanSummary, type SavedScan } from "../firebase/scans";
 import { DOCUMENT_TYPES, toScanSummary, type ScanSummary } from "../domain/scan-summary";
 import { ScanParseError } from "../domain/parse-result";
-import { quotaDetail, runFirstPassScan, type ScanEnvelope } from "../firebase/scan";
-import { models } from "../firebase/models";
+import { quotaDetail, rateLimitHint, runFirstPassScan, type ScanEnvelope } from "../firebase/scan";
+import { models, slimResponseConstraint } from "../firebase/models";
 import { getDeviceStatus, initDeviceModel, type DeviceStatus } from "../firebase/device";
 import { runCloudLegalResearch, type CloudResearch } from "../firebase/research";
 import { JURISDICTION_LABELS, type JurisdictionId } from "../domain/types";
@@ -127,7 +127,59 @@ export default function App() {
     [user],
   );
 
-  async function runScan(text: string, route: ScanRoute) {
+  // The on-device fallback chain (Task 1 Gate). Tier 2: slim schema (drops
+// confidence & keyDates) with a concise prompt. Tier 3: Chrome's LanguageModel
+// called directly, bypassing @firebase/ai's multimodal array wrapper. Tier 4:
+// the draft model with a compacted prompt.
+async function localFallbackGenerate(text: string) {
+  const shortExcerpt = text.slice(0, 1500);
+  const slimPrompt = `Review this consumer agreement excerpt. Return at most 2 findings with exact verbatim quotes, keeping each string under 12 words.\n\n${shortExcerpt}`;
+  try {
+    return await models.localSlim.generateContent(slimPrompt);
+  } catch {
+    const lm = (
+      globalThis as unknown as {
+        LanguageModel?: {
+          create?: (opts?: unknown) => Promise<{
+            prompt: (input: string, opts?: unknown) => Promise<string>;
+            destroy?: () => void;
+            inputQuota?: number;
+            inputUsage?: number;
+          }>;
+        };
+      }
+    ).LanguageModel;
+    if (lm?.create) {
+      const session = await lm.create({
+        expectedInputs: [{ type: "text", languages: ["en"] }],
+        expectedOutputs: [{ type: "text", languages: ["en"] }],
+      });
+      try {
+        const rawText = await session.prompt(slimPrompt, {
+          responseConstraint: slimResponseConstraint,
+          omitResponseConstraintInput: true,
+        });
+        return {
+          response: {
+            text: () => rawText,
+            inferenceSource: "on_device",
+          },
+        };
+      } catch (directErr) {
+        const q = session.inputQuota;
+        const u = session.inputUsage;
+        const msg = directErr instanceof Error ? directErr.message : String(directErr);
+        throw new Error(`${msg} [quota=${q ?? "n/a"}, usage=${u ?? "n/a"}]`);
+      } finally {
+        session.destroy?.();
+      }
+    }
+    const compactPrompt = `Return ONLY valid JSON: {"documentType":"SUBSCRIPTION_TERMS","overallRisk":"HIGH","summary":"1 short sentence","findings":[{"category":"RENEWAL","severity":"HIGH","quote":"exact verbatim quote from text","plainEnglish":"short","whyItMatters":"short","nextStep":"short","confidence":"HIGH"}],"keyDates":[],"unknowns":[]}\n\nText:\n${text.slice(0, 600)}`;
+    return await models.draftLocal.generateContent(compactPrompt);
+  }
+}
+
+async function runScan(text: string, route: ScanRoute) {
     setBusy(true);
     setScanError(null);
     setCanRetry(false);
@@ -140,57 +192,34 @@ export default function App() {
                 return await models.local.generateContent(prompt);
               } catch (firstErr) {
                 if (firstErr instanceof ScanParseError) throw firstErr;
-                // Tier 2 (Task 1 Gate): slim on-device schema (drops confidence & keyDates)
-                // with omitResponseConstraintInput: true and concise prompt.
-                const shortExcerpt = text.slice(0, 1500);
-                const slimPrompt = `Review this consumer agreement excerpt. Return at most 2 findings with exact verbatim quotes, keeping each string under 12 words.\n\n${shortExcerpt}`;
-                try {
-                  return await models.localSlim.generateContent(slimPrompt);
-                } catch {
-                  // Tier 3: bypass @firebase/ai's multimodal array wrapper and call
-                  // Chrome's LanguageModel.create() + session.prompt(plainString) directly.
-                  const lm = (
-                    globalThis as unknown as {
-                      LanguageModel?: {
-                        create?: () => Promise<{
-                          prompt: (input: string) => Promise<string>;
-                          destroy?: () => void;
-                          inputQuota?: number;
-                          inputUsage?: number;
-                        }>;
-                      };
-                    }
-                  ).LanguageModel;
-                  if (lm?.create) {
-                    const session = await lm.create();
-                    try {
-                      const compactPrompt = `Return ONLY valid JSON: {"documentType":"SUBSCRIPTION_TERMS","overallRisk":"HIGH","summary":"1 short sentence","findings":[{"category":"RENEWAL","severity":"HIGH","quote":"exact verbatim quote from text","plainEnglish":"short","whyItMatters":"short","nextStep":"short","confidence":"HIGH"}],"keyDates":[],"unknowns":[]}\n\nText:\n${text.slice(0, 600)}`;
-                      const rawText = await session.prompt(compactPrompt);
-                      return {
-                        response: {
-                          text: () => rawText,
-                          inferenceSource: "on_device",
-                        },
-                      };
-                    } catch (directErr) {
-                      const q = session.inputQuota;
-                      const u = session.inputUsage;
-                      const msg = directErr instanceof Error ? directErr.message : String(directErr);
-                      throw new Error(`${msg} [quota=${q ?? "n/a"}, usage=${u ?? "n/a"}]`);
-                    } finally {
-                      session.destroy?.();
-                    }
-                  }
-                  const compactPrompt = `Return ONLY valid JSON: {"documentType":"SUBSCRIPTION_TERMS","overallRisk":"HIGH","summary":"1 short sentence","findings":[{"category":"RENEWAL","severity":"HIGH","quote":"exact verbatim quote from text","plainEnglish":"short","whyItMatters":"short","nextStep":"short","confidence":"HIGH"}],"keyDates":[],"unknowns":[]}\n\nText:\n${text.slice(0, 600)}`;
-                  return await models.draftLocal.generateContent(compactPrompt);
-                }
+                return localFallbackGenerate(text);
               }
             }
-          : (prompt: string) => models.hybrid.generateContent(prompt);
-      const scan = await runFirstPassScan(text, generate);
+          : async (prompt: string) => {
+              try {
+                return await models.hybrid.generateContent(prompt);
+              } catch {
+                // @firebase/ai PREFER_ON_DEVICE does not catch errors thrown by
+                // Chrome's on-device session, so fall back explicitly to cloudTriage.
+                return await models.cloudTriage.generateContent(prompt);
+              }
+            };
+      // A truncated on-device answer is retried on the slim schema (local) or
+      // on cloudTriage (hybrid), not by re-asking the exact same way.
+      const retry =
+        route === "local"
+          ? () => localFallbackGenerate(text)
+          : (prompt: string) => models.cloudTriage.generateContent(prompt);
+      const scan = await runFirstPassScan(text, generate, retry);
       setScreen({ name: "results", source: text, scan });
       await saveSummary(scan);
     } catch (e) {
+      const limited = rateLimitHint(e);
+      if (limited) {
+        setScanError(limited);
+        setCanRetry(true);
+        return;
+      }
       const detail = quotaDetail(e);
       if (e instanceof ScanParseError) {
         setScanError("The model's answer came back incomplete. Try again.");
@@ -214,8 +243,8 @@ export default function App() {
         models.grounded.generateContent(prompt),
       );
       setScreen({ name: "research", source, redactedText, jurisdiction, research, scan });
-    } catch {
-      setScanError("Grounded cloud research failed. You can try again.");
+    } catch (e) {
+      setScanError(rateLimitHint(e) ?? "Grounded cloud research failed. You can try again.");
     } finally {
       setBusy(false);
     }

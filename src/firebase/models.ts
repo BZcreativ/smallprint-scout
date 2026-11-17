@@ -44,7 +44,7 @@ const responseConstraint = toJsonSchemaConstraint(triageSchema);
 
 // Slim on-device schema (Task 1 Gate fallback: drops `confidence` and `keyDates`
 // when Chrome's 1,024-token on-device context window rejects the full schema).
-const slimResponseConstraint = {
+export const slimResponseConstraint = {
   type: "object",
   properties: {
     documentType: {
@@ -163,7 +163,19 @@ function createCloudModels(cloudModel: string) {
     },
   });
 
-  return { hybrid, grounded, draftHybrid };
+  const cloudTriage = getGenerativeModel(ai, {
+    mode: InferenceMode.ONLY_IN_CLOUD,
+    inCloudParams: {
+      model: cloudModel,
+      generationConfig: {
+        responseMimeType: "application/json",
+        responseSchema: triageSchema,
+        temperature: 0.1,
+      },
+    },
+  });
+
+  return { hybrid, grounded, draftHybrid, cloudTriage };
 }
 
 export function createModels(cloudModel: string = DEFAULT_CLOUD_MODEL) {
