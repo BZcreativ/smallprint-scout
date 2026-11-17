@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { validateInput } from "../domain/input";
+import { MAX_LENGTH, validateInput } from "../domain/input";
 import type { DeviceStatus } from "../firebase/device";
 
 // The first screen: paste an agreement, or load one of the seeded samples.
@@ -38,6 +38,9 @@ export function InputScreen({
   const validation = validateInput(text);
   const hasText = text.trim().length > 0;
   const invalid = hasText && !validation.ok;
+  // A whole page is longer than one scan, so the way out is a section rather
+  // than the page: the extension can send just the selected part.
+  const overLimit = text.trim().length > MAX_LENGTH;
 
   async function loadSample(id: string) {
     setSampleError(null);
@@ -112,6 +115,11 @@ export function InputScreen({
         </p>
       )}
       {invalid && !formError && <p className="error">{validation.message}</p>}
+      {overLimit && (
+        <p className="hint">
+          Tip: select one section on the page and right-click → Scan selection in SmallPrint Scout.
+        </p>
+      )}
 
       <div className="actions">
         <button
