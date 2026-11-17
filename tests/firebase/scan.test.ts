@@ -1,5 +1,5 @@
 import { expect, test, vi } from "vitest";
-import { runFirstPassScan, toRoute } from "../../src/firebase/scan";
+import { quotaDetail, runFirstPassScan, toRoute } from "../../src/firebase/scan";
 import { ScanParseError } from "../../src/domain/parse-result";
 
 // Sample 2 from docs/spec.md §5.
@@ -26,6 +26,20 @@ const VALID_JSON = JSON.stringify({
 });
 
 test("toRoute maps undefined to UNKNOWN", () => expect(toRoute(undefined)).toBe("UNKNOWN"));
+
+test("quotaDetail appends Chrome's token counts when present", () => {
+  const quotaError: unknown = Object.assign(
+    new Error("The input is too large."),
+    { requested: 1179, contextWindow: 1024 },
+  );
+  expect(quotaDetail(quotaError)).toBe(" (The input is too large.: requested 1179 of 1024 tokens)");
+});
+
+test("quotaDetail falls back to the bare message", () => {
+  expect(quotaDetail(new Error("boom"))).toBe(" (boom)");
+  expect(quotaDetail("not an error")).toBe("");
+  expect(quotaDetail(new Error(""))).toBe("");
+});
 
 test("retries once then throws ScanParseError", async () => {
   const gen = vi.fn().mockResolvedValue({ response: { text: () => "not json" } });

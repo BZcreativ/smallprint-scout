@@ -19,6 +19,20 @@ Rules:
 
 export type GenerateFn = (prompt: string) => Promise<{ response: { text(): string; inferenceSource?: string } }>;
 
+// Chrome's QuotaExceededError ("The input is too large.") carries the token
+// counts that explain the rejection (`requested`, `contextWindow`). Showing
+// them turns any recurrence into evidence instead of a bare message.
+export function quotaDetail(e: unknown): string {
+  const ex = e as { message?: string; requested?: unknown; contextWindow?: unknown };
+  const message = typeof ex?.message === "string" && ex.message ? ex.message : "";
+  const req = typeof ex?.requested === "number" ? ex.requested : undefined;
+  const win = typeof ex?.contextWindow === "number" ? ex.contextWindow : undefined;
+  if (req !== undefined && win !== undefined) {
+    return ` (${message}: requested ${req} of ${win} tokens)`;
+  }
+  return message ? ` (${message})` : "";
+}
+
 export interface ScanEnvelope {
   data: TriageResult;
   route: InferenceRoute;

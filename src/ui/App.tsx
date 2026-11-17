@@ -4,7 +4,7 @@ import { signInWithGoogle, signOutUser, useAuthUser } from "../firebase/auth";
 import { clearScanHistory, listRecentScans, saveScanSummary, type SavedScan } from "../firebase/scans";
 import { DOCUMENT_TYPES, toScanSummary, type ScanSummary } from "../domain/scan-summary";
 import { ScanParseError } from "../domain/parse-result";
-import { runFirstPassScan, type ScanEnvelope } from "../firebase/scan";
+import { quotaDetail, runFirstPassScan, type ScanEnvelope } from "../firebase/scan";
 import { models } from "../firebase/models";
 import { getDeviceStatus, initDeviceModel, type DeviceStatus } from "../firebase/device";
 import { runCloudLegalResearch, type CloudResearch } from "../firebase/research";
@@ -158,7 +158,7 @@ export default function App() {
       setScreen({ name: "results", source: text, scan });
       await saveSummary(scan);
     } catch (e) {
-      const detail = e instanceof Error && e.message ? ` (${e.message})` : "";
+      const detail = quotaDetail(e);
       if (e instanceof ScanParseError) {
         setScanError("The model's answer came back incomplete. Try again.");
         setCanRetry(true);
