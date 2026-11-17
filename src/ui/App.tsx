@@ -208,11 +208,11 @@ async function runScan(text: string, route: ScanRoute) {
                 // so fall back explicitly to cloudTriage with a 25s timeout and
                 // fast gemini-3.5-flash-lite fallback on 503/timeout.
                 try {
-                  return await models.cloudTriage.generateContent(prompt, { timeout: 25000 });
+                  return await models.cloudTriage.generateContent(prompt, { timeout: 45000 });
                 } catch (cloudErr) {
                   const msg = cloudErr instanceof Error ? cloudErr.message : "";
                   if (/503|429|quota|deadline expired|unavailable|timeout|abort/i.test(msg)) {
-                    return await models.cloudTriageFallback.generateContent(prompt, { timeout: 25000 });
+                    return await models.cloudTriageFallback.generateContent(prompt, { timeout: 45000 });
                   }
                   throw cloudErr;
                 }
@@ -223,7 +223,7 @@ async function runScan(text: string, route: ScanRoute) {
       const retry =
         route === "local"
           ? () => localFallbackGenerate(text)
-          : (prompt: string) => models.cloudTriageFallback.generateContent(prompt, { timeout: 25000 });
+          : (prompt: string) => models.cloudTriageFallback.generateContent(prompt, { timeout: 45000 });
       const scan = await runFirstPassScan(text, generate, retry);
       setScreen({ name: "results", source: text, scan });
       await saveSummary(scan);

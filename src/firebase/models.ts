@@ -3,6 +3,7 @@ import {
   getGenerativeModel,
   GoogleAIBackend,
   InferenceMode,
+  ThinkingLevel,
 } from "firebase/ai";
 import { firebaseApp } from "./app";
 import { triageSchema } from "../domain/schema";
@@ -141,6 +142,7 @@ function createCloudModels(cloudModel: string) {
         responseMimeType: "application/json",
         responseSchema: triageSchema,
         temperature: 0.1,
+        thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
       },
     },
   });
@@ -150,7 +152,10 @@ function createCloudModels(cloudModel: string) {
     inCloudParams: {
       model: cloudModel,
       tools: [{ googleSearch: {} }],
-      generationConfig: { temperature: 0.2 },
+      generationConfig: {
+        temperature: 0.2,
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+      },
     },
   });
 
@@ -159,7 +164,10 @@ function createCloudModels(cloudModel: string) {
     onDeviceParams: { createOptions: textCreateOptions() },
     inCloudParams: {
       model: cloudModel,
-      generationConfig: { temperature: 0.2 },
+      generationConfig: {
+        temperature: 0.2,
+        thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
+      },
     },
   });
 
@@ -171,6 +179,7 @@ function createCloudModels(cloudModel: string) {
         responseMimeType: "application/json",
         responseSchema: triageSchema,
         temperature: 0.1,
+        thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
       },
     },
   });
@@ -184,6 +193,7 @@ function createCloudModels(cloudModel: string) {
         responseMimeType: "application/json",
         responseSchema: triageSchema,
         temperature: 0.1,
+        thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
       },
     },
   });
