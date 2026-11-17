@@ -3,6 +3,18 @@
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
   },
+  "auth": {
+    "providers": {
+      "googleSignIn": {
+        "oAuthBrandDisplayName": "SmallPrint Scout",
+        "supportEmail": "buzman@gmail.com",
+        "authorizedRedirectUris": [
+          "https://smallprint-scout.firebaseapp.com/__/auth/handler",
+          "http://localhost"
+        ]
+      }
+    }
+  },
   "emulators": {
     "firestore": { "host": "127.0.0.1", "port": 8181 },
     "ui": { "enabled": false }

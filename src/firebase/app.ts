@@ -2,7 +2,7 @@ import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
-// Values come from `npx -y firebase-tools@latest apps:sdkconfig WEB <APP_ID> --project buildhybridai-32b9d`,
+// Values come from `npx -y firebase-tools@latest apps:sdkconfig WEB <APP_ID> --project smallprint-scout`,
 // copied into .env.local (gitignored). See .env.example.
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,

@@ -5,7 +5,7 @@ Read `docs/plans/2026-11-16-smallprint-scout.md` (build plan) and `TEAM_PLAN.md`
 ## Firebase
 
 - Before any Firebase work, read and follow the matching skill in `.agents/skills/` (AI Logic, Auth, Firestore, Hosting, Remote Config, rules).
-- Firebase project: `buildhybridai-32b9d`. Run the CLI as `npx -y firebase-tools@latest`, never a bare `firebase`.
+- Firebase project: `smallprint-scout`. Run the CLI as `npx -y firebase-tools@latest`, never a bare `firebase`.
 - Firestore rules: change `firestore.rules`, `src/domain/scan-summary.ts` and `tests/rules/` together, then run `npm run test:rules`. The emulator needs Java 21 or newer.
 
 ## Code search (XERJ)
