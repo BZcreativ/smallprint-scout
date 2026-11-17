@@ -15,6 +15,7 @@ Rules:
 2. Do not invent missing prices, dates, or legal conclusions. Put missing critical facts in 'unknowns'.
 3. Return at most 3 high-priority findings sorted by practical impact.
 4. Keep summary, plainEnglish, whyItMatters, and nextStep concise (under 15 words each).
+5. Return ONLY the JSON object with no text before or after it.
 `.trim();
 
 export type GenerateFn = (prompt: string) => Promise<{ response: { text(): string; inferenceSource?: string } }>;
@@ -33,6 +34,16 @@ export function quotaDetail(e: unknown): string {
   return message ? ` (${message})` : "";
 }
 
+// Gemini's free tier allows only 5 requests per minute per model. A 429 is a
+// pacing problem, not a bug: the request was valid, the server just asks to
+// retry in ~20-60s.
+export function rateLimitHint(e: unknown): string | null {
+  const message = (e as { message?: string })?.message ?? "";
+  return /429|exceeded your current quota/i.test(message)
+    ? "Gemini's free tier allows 5 scans per minute — wait about 30 seconds and scan again."
+    : null;
+}
+
 export interface ScanEnvelope {
   data: TriageResult;
   route: InferenceRoute;
@@ -49,7 +60,11 @@ export function toRoute(v: unknown): InferenceRoute {
   return "UNKNOWN";
 }
 
-export async function runFirstPassScan(text: string, generate: GenerateFn): Promise<ScanEnvelope> {
+export async function runFirstPassScan(
+  text: string,
+  generate: GenerateFn,
+  retryGenerate: GenerateFn = generate,
+): Promise<ScanEnvelope> {
   const started = performance.now();
   const prompt = `${SYSTEM_PROMPT_TRIAGE}\n\n--- AGREEMENT TEXT ---\n${text}`;
 
@@ -59,11 +74,19 @@ export async function runFirstPassScan(text: string, generate: GenerateFn): Prom
     data = parseTriage(response.response.text());
   } catch (error) {
     if (!(error instanceof ScanParseError)) throw error;
-    // One silent retry: the on-device model sometimes answers with truncated
-    // JSON. If the retry fails too, the error reaches the UI as a readable
-    // "try again" state (amendment A9).
-    response = await generate(prompt);
-    data = parseTriage(response.response.text());
+    console.warn("[SmallPrint] First pass parse failed:", error.message, "\nRaw output:", response.response.text());
+    // One silent retry (amendment A9). The retry model is a separate function:
+    // the on-device route passes the slim schema here, because a truncated
+    // answer means the output cap was hit and re-asking the same way loses.
+    response = await retryGenerate(prompt);
+    try {
+      data = parseTriage(response.response.text());
+    } catch (retryErr) {
+      if (retryErr instanceof ScanParseError) {
+        console.warn("[SmallPrint] Retry parse failed:", retryErr.message, "\nRaw output:", response.response.text());
+      }
+      throw retryErr;
+    }
   }
 
   return {

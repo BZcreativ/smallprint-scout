@@ -222,7 +222,7 @@ async function runScan(text: string, route: ScanRoute) {
       }
       const detail = quotaDetail(e);
       if (e instanceof ScanParseError) {
-        setScanError("The model's answer came back incomplete. Try again.");
+        setScanError(`The model's answer came back incomplete. Try again.${detail}`);
         setCanRetry(true);
       } else if (route === "local") {
         setScanError(`On-device scan failed. You can try the redacted cloud scan instead.${detail}`);
