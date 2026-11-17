@@ -179,6 +179,25 @@ async function localFallbackGenerate(text: string) {
   }
 }
 
+// Every cloud request also runs a reCAPTCHA Enterprise execute (the App Check
+// limited-use token) INSIDE the request's own timeout window, and in Firefox
+// that verify alone can take 20-30s. 45s caps starved the model leg; 90s
+// leaves it a full minute.
+const CLOUD_TIMEOUT_MS = 90_000;
+
+// "Timeout has expired." from @firebase/ai does not say whether the reCAPTCHA
+// verify or the model call consumed the window, so each step logs its own
+// duration and failure for diagnosis.
+async function timed<T>(step: string, call: () => Promise<T>): Promise<T> {
+  const started = performance.now();
+  try {
+    return await call();
+  } catch (e) {
+    console.warn(`[SmallPrint] ${step} failed after ${Math.round(performance.now() - started)}ms:`, e);
+    throw e;
+  }
+}
+
 async function runScan(text: string, route: ScanRoute) {
     setBusy(true);
     setScanError(null);
@@ -196,26 +215,35 @@ async function runScan(text: string, route: ScanRoute) {
               }
             }
           : async (prompt: string) => {
-              try {
-                const res = await models.hybrid.generateContent(prompt);
-                if (/^On-device model is not available in Chromium/i.test(res.response.text().trim())) {
-                  throw new Error("Chromium stub");
-                }
-                return res;
-              } catch {
-                // @firebase/ai PREFER_ON_DEVICE does not catch errors thrown by
-                // Chrome's on-device session (and Chromium's stub echoes input),
-                // so fall back explicitly to cloudTriage with a 25s timeout and
-                // fast gemini-3.5-flash-lite fallback on 503/timeout.
+              // `hybrid` (PREFER_ON_DEVICE) silently falls through to the same
+              // cloud call as `cloudTriage` when the Prompt API is missing, so
+              // on unsupported browsers the duplicate request (and its extra
+              // reCAPTCHA execute) is skipped and cloudTriage goes first.
+              if (deviceStatus === "available") {
                 try {
-                  return await models.cloudTriage.generateContent(prompt, { timeout: 45000 });
-                } catch (cloudErr) {
-                  const msg = cloudErr instanceof Error ? cloudErr.message : "";
-                  if (/503|429|quota|deadline expired|unavailable|timeout|abort/i.test(msg)) {
-                    return await models.cloudTriageFallback.generateContent(prompt, { timeout: 45000 });
+                  const res = await timed("hybrid", () => models.hybrid.generateContent(prompt));
+                  if (!/^On-device model is not available in Chromium/i.test(res.response.text().trim())) {
+                    return res;
                   }
-                  throw cloudErr;
+                  console.warn("[SmallPrint] Chromium on-device stub echoed the prompt; retrying in the cloud.");
+                } catch (deviceErr) {
+                  // @firebase/ai PREFER_ON_DEVICE does not catch errors thrown
+                  // by Chrome's on-device session, so fall back explicitly.
+                  console.warn("[SmallPrint] On-device leg failed; falling back to the cloud.", deviceErr);
                 }
+              }
+              try {
+                return await timed("cloudTriage", () =>
+                  models.cloudTriage.generateContent(prompt, { timeout: CLOUD_TIMEOUT_MS }),
+                );
+              } catch (cloudErr) {
+                const msg = cloudErr instanceof Error ? cloudErr.message : "";
+                if (/503|429|quota|deadline expired|unavailable|timeout|abort/i.test(msg)) {
+                  return await timed("cloudTriageFallback", () =>
+                    models.cloudTriageFallback.generateContent(prompt, { timeout: CLOUD_TIMEOUT_MS }),
+                  );
+                }
+                throw cloudErr;
               }
             };
       // A truncated on-device answer is retried on the slim schema (local) or
@@ -223,12 +251,13 @@ async function runScan(text: string, route: ScanRoute) {
       const retry =
         route === "local"
           ? () => localFallbackGenerate(text)
-          : (prompt: string) => models.cloudTriageFallback.generateContent(prompt, { timeout: 45000 });
+          : (prompt: string) => models.cloudTriageFallback.generateContent(prompt, { timeout: CLOUD_TIMEOUT_MS });
       const scan = await runFirstPassScan(text, generate, retry);
       setScreen({ name: "results", source: text, scan });
       await saveSummary(scan);
     } catch (e) {
       const detail = quotaDetail(e);
+      const message = e instanceof Error ? e.message : String(e);
       const limited = rateLimitHint(e);
       if (limited) {
         setScanError(`${limited}${detail}`);
@@ -237,6 +266,12 @@ async function runScan(text: string, route: ScanRoute) {
       }
       if (e instanceof ScanParseError) {
         setScanError(`The model's answer came back incomplete. Try again.${detail}`);
+        setCanRetry(true);
+      } else if (route !== "local" && /timeout has expired|abort/i.test(message)) {
+        // reCAPTCHA verification and the Gemini call share one timeout window
+        // inside the SDK, so the two cannot be told apart from app code; the
+        // console warnings from `timed` carry the per-step durations.
+        setScanError(`The cloud scan timed out (reCAPTCHA verification or Gemini was too slow). You can try again.${detail}`);
         setCanRetry(true);
       } else if (route === "local") {
         setScanError(`On-device scan failed. You can try the redacted cloud scan instead.${detail}`);
