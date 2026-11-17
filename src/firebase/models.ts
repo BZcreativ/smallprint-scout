@@ -21,26 +21,70 @@ import { DEFAULT_CLOUD_MODEL, getCloudModelName, initRemoteConfig } from "./remo
 // instructions (amendment A7).
 
 // `Schema#toJSON` is stripped from the public types and includes OpenAPI-only
-// `nullable` properties that Chrome's Prompt API JSON Schema validator can
-// reject, so serialise and strip `nullable` before passing `responseConstraint`.
+// `nullable` and verbose `description` properties that inflate Chrome's Prompt
+// API token usage and can trigger `QuotaExceededError: The input is too large.`
 function toJsonSchemaConstraint(schema: unknown): object {
   const raw = JSON.parse(JSON.stringify(schema)) as Record<string, unknown>;
-  function stripNullable(node: unknown): unknown {
-    if (Array.isArray(node)) return node.map(stripNullable);
+  function stripMeta(node: unknown): unknown {
+    if (Array.isArray(node)) return node.map(stripMeta);
     if (typeof node === "object" && node !== null) {
       const out: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(node)) {
-        if (k === "nullable") continue;
-        out[k] = stripNullable(v);
+        if (k === "nullable" || k === "description") continue;
+        out[k] = stripMeta(v);
       }
       return out;
     }
     return node;
   }
-  return stripNullable(raw) as object;
+  return stripMeta(raw) as object;
 }
 
 const responseConstraint = toJsonSchemaConstraint(triageSchema);
+
+// Slim on-device schema (Task 1 Gate fallback: drops `confidence` and `keyDates`
+// when Chrome's 1,024-token on-device context window rejects the full schema).
+const slimResponseConstraint = {
+  type: "object",
+  properties: {
+    documentType: {
+      type: "string",
+      enum: ["SUBSCRIPTION_TERMS", "FREE_TRIAL", "PRIVACY_AI_CLAUSE", "SERVICE_AGREEMENT", "OTHER"],
+    },
+    overallRisk: { type: "string", enum: ["LOW", "MEDIUM", "HIGH"] },
+    summary: { type: "string" },
+    findings: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          category: {
+            type: "string",
+            enum: ["PRICE", "RENEWAL", "CANCELLATION", "REFUND", "RIGHTS", "PRIVACY", "OTHER"],
+          },
+          severity: { type: "string", enum: ["INFO", "WATCH", "HIGH"] },
+          quote: { type: "string" },
+          plainEnglish: { type: "string" },
+          whyItMatters: { type: "string" },
+          nextStep: { type: "string" },
+        },
+        required: ["category", "severity", "quote", "plainEnglish", "whyItMatters", "nextStep"],
+      },
+    },
+    unknowns: { type: "array", items: { type: "string" } },
+  },
+  required: ["documentType", "overallRisk", "summary", "findings", "unknowns"],
+};
+
+const onDevicePromptOptions = {
+  responseConstraint,
+  omitResponseConstraintInput: true,
+} as { responseConstraint: object };
+
+const slimOnDevicePromptOptions = {
+  responseConstraint: slimResponseConstraint,
+  omitResponseConstraintInput: true,
+} as { responseConstraint: object };
 
 const ai = getAI(firebaseApp, {
   backend: new GoogleAIBackend(),
@@ -62,7 +106,15 @@ function createOnDeviceModels() {
     mode: InferenceMode.ONLY_ON_DEVICE,
     onDeviceParams: {
       createOptions: textCreateOptions(),
-      promptOptions: { responseConstraint },
+      promptOptions: onDevicePromptOptions,
+    },
+  });
+
+  const localSlim = getGenerativeModel(ai, {
+    mode: InferenceMode.ONLY_ON_DEVICE,
+    onDeviceParams: {
+      createOptions: textCreateOptions(),
+      promptOptions: slimOnDevicePromptOptions,
     },
   });
 
@@ -71,7 +123,7 @@ function createOnDeviceModels() {
     onDeviceParams: { createOptions: textCreateOptions() },
   });
 
-  return { local, draftLocal };
+  return { local, localSlim, draftLocal };
 }
 
 // The three models with a cloud leg. `cloudModel` is the model name the cloud
@@ -81,7 +133,7 @@ function createCloudModels(cloudModel: string) {
     mode: InferenceMode.PREFER_ON_DEVICE,
     onDeviceParams: {
       createOptions: textCreateOptions(),
-      promptOptions: { responseConstraint },
+      promptOptions: onDevicePromptOptions,
     },
     inCloudParams: {
       model: cloudModel,

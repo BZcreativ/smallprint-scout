@@ -140,10 +140,17 @@ export default function App() {
                 return await models.local.generateContent(prompt);
               } catch (firstErr) {
                 if (firstErr instanceof ScanParseError) throw firstErr;
-                // Fallback if Chrome's constrained decoder rejects responseConstraint:
-                // still 100% ONLY_ON_DEVICE via models.draftLocal.
-                const fallbackPrompt = `${prompt}\n\nRespond ONLY with a valid JSON object containing keys: documentType ("SUBSCRIPTION_TERMS"|"FREE_TRIAL"|"PRIVACY_AI_CLAUSE"|"SERVICE_AGREEMENT"|"OTHER"), overallRisk ("LOW"|"MEDIUM"|"HIGH"), summary (string), findings (array of {category, severity, quote, plainEnglish, whyItMatters, nextStep, confidence}), keyDates (array of {event, dateOrTrigger, sourceQuote}), unknowns (array of strings).`;
-                return await models.draftLocal.generateContent(fallbackPrompt);
+                // Tier 2 (Task 1 Gate): slim on-device schema (drops confidence & keyDates)
+                // with omitResponseConstraintInput: true and concise prompt.
+                const shortExcerpt = text.slice(0, 1500);
+                const slimPrompt = `Review this consumer agreement excerpt. Return at most 2 findings with exact verbatim quotes, keeping each string under 12 words.\n\n${shortExcerpt}`;
+                try {
+                  return await models.localSlim.generateContent(slimPrompt);
+                } catch {
+                  // Tier 3: direct LanguageModel plain-string prompt without schema overhead.
+                  const compactPrompt = `Return ONLY valid JSON: {"documentType":"SUBSCRIPTION_TERMS","overallRisk":"HIGH","summary":"1 short sentence","findings":[{"category":"RENEWAL","severity":"HIGH","quote":"exact verbatim quote from text","plainEnglish":"short","whyItMatters":"short","nextStep":"short","confidence":"HIGH"}],"keyDates":[],"unknowns":[]}\n\nText:\n${text.slice(0, 900)}`;
+                  return await models.draftLocal.generateContent(compactPrompt);
+                }
               }
             }
           : (prompt: string) => models.hybrid.generateContent(prompt);
@@ -322,6 +329,17 @@ export default function App() {
           <p role="alert" className="error">{scanError}</p>
           {canRetry && lastAttempt && (
             <button onClick={() => void runScan(lastAttempt.text, lastAttempt.route)}>Try again</button>
+          )}
+          {lastAttempt?.route === "local" && inputText.trim().length >= 80 && (
+            <button
+              onClick={() => {
+                setScanError(null);
+                setCanRetry(false);
+                setScreen({ name: "gate", purpose: "hybrid", text: inputText });
+              }}
+            >
+              Scan with cloud (redacted)
+            </button>
           )}
         </div>
       )}

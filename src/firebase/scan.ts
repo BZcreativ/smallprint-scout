@@ -14,6 +14,7 @@ Rules:
 1. Every finding MUST include an exact verbatim 'quote' copied from the user's text.
 2. Do not invent missing prices, dates, or legal conclusions. Put missing critical facts in 'unknowns'.
 3. Return at most 3 high-priority findings sorted by practical impact.
+4. Keep summary, plainEnglish, whyItMatters, and nextStep concise (under 15 words each).
 `.trim();
 
 export type GenerateFn = (prompt: string) => Promise<{ response: { text(): string; inferenceSource?: string } }>;
