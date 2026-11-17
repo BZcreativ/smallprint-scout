@@ -6,6 +6,7 @@ import {
 } from "firebase/ai";
 import { firebaseApp } from "./app";
 import { triageSchema } from "../domain/schema";
+import { DEFAULT_CLOUD_MODEL, getCloudModelName, initRemoteConfig } from "./remote-config";
 
 // The five models the app uses, one per inference path (docs/spec.md §4.3).
 //
@@ -18,8 +19,6 @@ import { triageSchema } from "../domain/schema";
 // No model carries a `systemInstruction`: the triage prompt is prepended to
 // the prompt text instead, so the on-device and cloud paths see the same
 // instructions (amendment A7).
-
-const CLOUD_MODEL = "gemini-3.8-flash";
 
 // `Schema#toJSON` is stripped from the public types, so serialise through
 // JSON.stringify, which calls it at runtime and yields the plain JSON schema
@@ -39,7 +38,9 @@ function textCreateOptions() {
   };
 }
 
-export function createModels() {
+// The two on-device models. They never leave the machine and do not depend on
+// the cloud model name, so Remote Config never rebuilds them.
+function createOnDeviceModels() {
   const local = getGenerativeModel(ai, {
     mode: InferenceMode.ONLY_ON_DEVICE,
     onDeviceParams: {
@@ -48,6 +49,17 @@ export function createModels() {
     },
   });
 
+  const draftLocal = getGenerativeModel(ai, {
+    mode: InferenceMode.ONLY_ON_DEVICE,
+    onDeviceParams: { createOptions: textCreateOptions() },
+  });
+
+  return { local, draftLocal };
+}
+
+// The three models with a cloud leg. `cloudModel` is the model name the cloud
+// calls use: Remote Config decides it, and the default is the fallback.
+function createCloudModels(cloudModel: string) {
   const hybrid = getGenerativeModel(ai, {
     mode: InferenceMode.PREFER_ON_DEVICE,
     onDeviceParams: {
@@ -55,7 +67,7 @@ export function createModels() {
       promptOptions: { responseConstraint },
     },
     inCloudParams: {
-      model: CLOUD_MODEL,
+      model: cloudModel,
       generationConfig: {
         responseMimeType: "application/json",
         responseSchema: triageSchema,
@@ -67,27 +79,51 @@ export function createModels() {
   const grounded = getGenerativeModel(ai, {
     mode: InferenceMode.ONLY_IN_CLOUD,
     inCloudParams: {
-      model: CLOUD_MODEL,
+      model: cloudModel,
       tools: [{ googleSearch: {} }],
       generationConfig: { temperature: 0.2 },
     },
-  });
-
-  const draftLocal = getGenerativeModel(ai, {
-    mode: InferenceMode.ONLY_ON_DEVICE,
-    onDeviceParams: { createOptions: textCreateOptions() },
   });
 
   const draftHybrid = getGenerativeModel(ai, {
     mode: InferenceMode.PREFER_ON_DEVICE,
     onDeviceParams: { createOptions: textCreateOptions() },
     inCloudParams: {
-      model: CLOUD_MODEL,
+      model: cloudModel,
       generationConfig: { temperature: 0.2 },
     },
   });
 
-  return { local, hybrid, grounded, draftLocal, draftHybrid };
+  return { hybrid, grounded, draftHybrid };
 }
 
-export const models = createModels();
+export function createModels(cloudModel: string = DEFAULT_CLOUD_MODEL) {
+  return { ...createOnDeviceModels(), ...createCloudModels(cloudModel) };
+}
+
+// The models the app uses. The cloud model name comes from Remote Config,
+// which needs a round trip, so the app starts on the default and the cloud
+// models are rebuilt once the remote value arrives.
+let activeCloudModel = getCloudModelName();
+
+export const models = createModels(activeCloudModel);
+
+// Rebuilds the cloud models with a new model name. The on-device models are
+// left alone: they never leave the machine and the user may already have
+// downloaded Gemini Nano.
+export function applyCloudModel(cloudModel: string): void {
+  if (!cloudModel || cloudModel === activeCloudModel) return;
+  activeCloudModel = cloudModel;
+  Object.assign(models, createCloudModels(cloudModel));
+}
+
+// The cloud model the app is using right now.
+export function currentCloudModel(): string {
+  return activeCloudModel;
+}
+
+// Remote Config is browser only, so it is only asked for in a browser. A
+// failure leaves the default model in place.
+if (typeof window !== "undefined") {
+  void initRemoteConfig().then((cloudModel) => applyCloudModel(cloudModel));
+}

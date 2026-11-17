@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SmallPrint Scout</title>
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+
+      body {
+        display: flex;
+        flex-direction: column;
+        font: 14px/1.4 system-ui, sans-serif;
+        color: #1f2933;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+        border-bottom: 1px solid #d9dde3;
+      }
+
+      h1 {
+        flex: 1;
+        margin: 0;
+        font-size: 14px;
+      }
+
+      button {
+        padding: 6px 10px;
+      }
+
+      iframe {
+        flex: 1;
+        width: 100%;
+        border: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>SmallPrint Scout</h1>
+      <button id="scan-page" type="button">Scan this page</button>
+    </header>
+    <!-- The app runs in the hosted page: Firebase, App Check and Gemini Nano
+         all live there, never in the extension. -->
+    <iframe
+      id="app-frame"
+      src="https://smallprint-scout.web.app/?embed=1"
+      allow="language-model"
+    ></iframe>
+    <script type="module" src="sidepanel.js"></script>
+  </body>
+</html>

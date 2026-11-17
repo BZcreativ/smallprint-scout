@@ -3,7 +3,7 @@
 // (the on-device token limit is 9,216, so one section at a time fits).
 
 const MIN_LENGTH = 80;
-const MAX_LENGTH = 6000;
+export const MAX_LENGTH = 6000;
 
 export type ValidatedInput = { ok: true; text: string } | { ok: false; message: string };
 

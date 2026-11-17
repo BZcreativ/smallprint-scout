@@ -9,6 +9,7 @@ import { models } from "../firebase/models";
 import { getDeviceStatus, initDeviceModel, type DeviceStatus } from "../firebase/device";
 import { runCloudLegalResearch, type CloudResearch } from "../firebase/research";
 import { JURISDICTION_LABELS, type JurisdictionId } from "../domain/types";
+import { acceptsMessage } from "../domain/extension-message";
 import { DraftEditor } from "./DraftEditor";
 import { EvalRunner } from "./EvalRunner";
 import { InputScreen } from "./InputScreen";
@@ -68,6 +69,24 @@ export default function App() {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  // The Chrome extension pushes the text of a page (or of a selection) into
+  // the app. Only a message from another extension is taken, and it only
+  // loads the text: the user still presses the scan button.
+  useEffect(() => {
+    function onMessage(event: MessageEvent) {
+      const text = acceptsMessage({ origin: event.origin, data: event.data });
+      if (text === null) return;
+
+      setInputText(text);
+      setScanError(null);
+      setCanRetry(false);
+      setScreen({ name: "input" });
+    }
+
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
   }, []);
 
   function handleEnableDevice() {
