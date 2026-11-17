@@ -39,6 +39,7 @@ export function quotaDetail(e: unknown): string {
 // retry in ~20-60s.
 export function rateLimitHint(e: unknown): string | null {
   const message = (e as { message?: string })?.message ?? "";
+  if (/limit:\s*0\b/i.test(message)) return null;
   return /429|exceeded your current quota/i.test(message)
     ? "Gemini's free tier allows 5 scans per minute — wait about 30 seconds and scan again."
     : null;

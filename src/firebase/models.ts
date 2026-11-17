@@ -179,7 +179,7 @@ function createCloudModels(cloudModel: string) {
   const cloudTriageFallback = getGenerativeModel(ai, {
     mode: InferenceMode.ONLY_IN_CLOUD,
     inCloudParams: {
-      model: "gemini-3.5-flash-lite",
+      model: "gemini-4-hydrogen",
       generationConfig: {
         responseMimeType: "application/json",
         responseSchema: triageSchema,

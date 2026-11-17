@@ -211,7 +211,7 @@ async function runScan(text: string, route: ScanRoute) {
                   return await models.cloudTriage.generateContent(prompt, { timeout: 25000 });
                 } catch (cloudErr) {
                   const msg = cloudErr instanceof Error ? cloudErr.message : "";
-                  if (/503|deadline expired|unavailable|timeout|abort/i.test(msg)) {
+                  if (/503|429|quota|deadline expired|unavailable|timeout|abort/i.test(msg)) {
                     return await models.cloudTriageFallback.generateContent(prompt, { timeout: 25000 });
                   }
                   throw cloudErr;
@@ -228,13 +228,13 @@ async function runScan(text: string, route: ScanRoute) {
       setScreen({ name: "results", source: text, scan });
       await saveSummary(scan);
     } catch (e) {
+      const detail = quotaDetail(e);
       const limited = rateLimitHint(e);
       if (limited) {
-        setScanError(limited);
+        setScanError(`${limited}${detail}`);
         setCanRetry(true);
         return;
       }
-      const detail = quotaDetail(e);
       if (e instanceof ScanParseError) {
         setScanError(`The model's answer came back incomplete. Try again.${detail}`);
         setCanRetry(true);
