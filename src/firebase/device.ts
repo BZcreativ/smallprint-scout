@@ -15,12 +15,17 @@ const globalScope = globalThis as typeof globalThis & {
   LanguageModel?: typeof LanguageModel;
 };
 
+const LANGUAGE_OPTIONS = {
+  expectedInputs: [{ type: "text" as const, languages: ["en"] }],
+  expectedOutputs: [{ type: "text" as const, languages: ["en"] }],
+};
+
 export async function getDeviceStatus(
   lm: typeof LanguageModel = globalScope.LanguageModel,
 ): Promise<DeviceStatus> {
   if (!lm) return "unsupported";
   try {
-    const status = await lm.availability();
+    const status = await lm.availability(LANGUAGE_OPTIONS);
     if (status === "unavailable") return "unsupported";
     return status;
   } catch {
