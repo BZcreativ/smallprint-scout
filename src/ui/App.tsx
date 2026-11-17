@@ -7,18 +7,19 @@ import { ScanParseError } from "../domain/parse-result";
 import { runFirstPassScan, type ScanEnvelope } from "../firebase/scan";
 import { models } from "../firebase/models";
 import { getDeviceStatus, initDeviceModel, type DeviceStatus } from "../firebase/device";
+import { runCloudLegalResearch, type CloudResearch } from "../firebase/research";
 import { JURISDICTION_LABELS, type JurisdictionId } from "../domain/types";
+import { DraftEditor } from "./DraftEditor";
+import { EvalRunner } from "./EvalRunner";
 import { InputScreen } from "./InputScreen";
 import { ModelStatus } from "./ModelStatus";
 import { RedactionGate } from "./RedactionGate";
+import { ResearchScreen } from "./ResearchScreen";
 import { ResultsScreen } from "./ResultsScreen";
 
 // The app is a small screen state machine. Every screen knows how it was
 // reached, so the back buttons and the retry button always have something
 // honest to go back to.
-//
-// `research` and `draft` are placeholders here: the next tasks build the real
-// screens and take these two variants over.
 
 // Which model a scan uses. `local` never leaves the machine, `hybrid` falls
 // back to the cloud with the redacted text.
@@ -28,7 +29,7 @@ export type Screen =
   | { name: "input" }
   | { name: "gate"; purpose: "hybrid" | "research"; text: string; scan?: ScanEnvelope }
   | { name: "results"; source: string; scan: ScanEnvelope }
-  | { name: "research"; source: string; redactedText: string; jurisdiction: JurisdictionId; scan?: ScanEnvelope }
+  | { name: "research"; source: string; redactedText: string; jurisdiction: JurisdictionId; research: CloudResearch; scan?: ScanEnvelope }
   | { name: "draft"; source: string; scan: ScanEnvelope; context?: string };
 
 export default function App() {
@@ -134,7 +135,30 @@ export default function App() {
     }
   }
 
+  async function runResearch(source: string, redactedText: string, jurisdiction: JurisdictionId, scan?: ScanEnvelope) {
+    setBusy(true);
+    setScanError(null);
+    setCanRetry(false);
+    try {
+      const research = await runCloudLegalResearch(redactedText, jurisdiction, (prompt) =>
+        models.grounded.generateContent(prompt),
+      );
+      setScreen({ name: "research", source, redactedText, jurisdiction, research, scan });
+    } catch {
+      setScanError("Grounded cloud research failed. You can try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const isEvalMode =
+    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("eval") === "1";
+
   function renderScreen() {
+    if (isEvalMode) {
+      return <EvalRunner />;
+    }
+
     switch (screen.name) {
       case "input":
         return (
@@ -160,13 +184,7 @@ export default function App() {
             purpose={gate.purpose}
             onConfirm={(text, jurisdiction) => {
               if (gate.purpose === "research") {
-                setScreen({
-                  name: "research",
-                  source: gate.text,
-                  redactedText: text,
-                  jurisdiction: jurisdiction ?? "UK",
-                  scan: gate.scan,
-                });
+                void runResearch(gate.text, text, jurisdiction ?? "UK", gate.scan);
                 return;
               }
               void runScan(text, "hybrid");
@@ -202,11 +220,43 @@ export default function App() {
         );
       }
 
-      case "research":
-        return <ResearchPlaceholder jurisdiction={screen.jurisdiction} />;
+      case "research": {
+        const current = screen;
+        return (
+          <ResearchScreen
+            markdown={current.research.markdown}
+            grounding={current.research.grounding}
+            onDraft={
+              current.scan
+                ? () =>
+                    setScreen({
+                      name: "draft",
+                      source: current.source,
+                      scan: current.scan!,
+                      context: `${JURISDICTION_LABELS[current.jurisdiction]}: ${current.research.markdown}`,
+                    })
+                : undefined
+            }
+            onBack={() =>
+              current.scan
+                ? setScreen({ name: "results", source: current.source, scan: current.scan })
+                : setScreen({ name: "input" })
+            }
+          />
+        );
+      }
 
-      case "draft":
-        return <DraftPlaceholder />;
+      case "draft": {
+        const current = screen;
+        return (
+          <DraftEditor
+            findings={current.scan.data.findings}
+            context={current.context}
+            deviceStatus={deviceStatus}
+            onBack={() => setScreen({ name: "results", source: current.source, scan: current.scan })}
+          />
+        );
+      }
     }
   }
 
@@ -262,28 +312,6 @@ function toDocumentType(value: string): ScanSummary["documentType"] {
   return (DOCUMENT_TYPES as readonly string[]).includes(value)
     ? (value as ScanSummary["documentType"])
     : "OTHER";
-}
-
-function ResearchPlaceholder({ jurisdiction }: { jurisdiction: JurisdictionId }) {
-  return (
-    <section className="placeholder">
-      <h2>Cloud research</h2>
-      <p>{JURISDICTION_LABELS[jurisdiction]}</p>
-      <p className="hint">
-        The redacted text you confirmed is ready for Google Gemini with Google Search. The research screen is
-        being built in the next task.
-      </p>
-    </section>
-  );
-}
-
-function DraftPlaceholder() {
-  return (
-    <section className="placeholder">
-      <h2>Draft a message</h2>
-      <p className="hint">The message editor is being built in the next task.</p>
-    </section>
-  );
 }
 
 function ScanHistory({
