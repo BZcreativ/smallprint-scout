@@ -147,8 +147,41 @@ export default function App() {
                 try {
                   return await models.localSlim.generateContent(slimPrompt);
                 } catch {
-                  // Tier 3: direct LanguageModel plain-string prompt without schema overhead.
-                  const compactPrompt = `Return ONLY valid JSON: {"documentType":"SUBSCRIPTION_TERMS","overallRisk":"HIGH","summary":"1 short sentence","findings":[{"category":"RENEWAL","severity":"HIGH","quote":"exact verbatim quote from text","plainEnglish":"short","whyItMatters":"short","nextStep":"short","confidence":"HIGH"}],"keyDates":[],"unknowns":[]}\n\nText:\n${text.slice(0, 900)}`;
+                  // Tier 3: bypass @firebase/ai's multimodal array wrapper and call
+                  // Chrome's LanguageModel.create() + session.prompt(plainString) directly.
+                  const lm = (
+                    globalThis as unknown as {
+                      LanguageModel?: {
+                        create?: () => Promise<{
+                          prompt: (input: string) => Promise<string>;
+                          destroy?: () => void;
+                          inputQuota?: number;
+                          inputUsage?: number;
+                        }>;
+                      };
+                    }
+                  ).LanguageModel;
+                  if (lm?.create) {
+                    const session = await lm.create();
+                    try {
+                      const compactPrompt = `Return ONLY valid JSON: {"documentType":"SUBSCRIPTION_TERMS","overallRisk":"HIGH","summary":"1 short sentence","findings":[{"category":"RENEWAL","severity":"HIGH","quote":"exact verbatim quote from text","plainEnglish":"short","whyItMatters":"short","nextStep":"short","confidence":"HIGH"}],"keyDates":[],"unknowns":[]}\n\nText:\n${text.slice(0, 600)}`;
+                      const rawText = await session.prompt(compactPrompt);
+                      return {
+                        response: {
+                          text: () => rawText,
+                          inferenceSource: "on_device",
+                        },
+                      };
+                    } catch (directErr) {
+                      const q = session.inputQuota;
+                      const u = session.inputUsage;
+                      const msg = directErr instanceof Error ? directErr.message : String(directErr);
+                      throw new Error(`${msg} [quota=${q ?? "n/a"}, usage=${u ?? "n/a"}]`);
+                    } finally {
+                      session.destroy?.();
+                    }
+                  }
+                  const compactPrompt = `Return ONLY valid JSON: {"documentType":"SUBSCRIPTION_TERMS","overallRisk":"HIGH","summary":"1 short sentence","findings":[{"category":"RENEWAL","severity":"HIGH","quote":"exact verbatim quote from text","plainEnglish":"short","whyItMatters":"short","nextStep":"short","confidence":"HIGH"}],"keyDates":[],"unknowns":[]}\n\nText:\n${text.slice(0, 600)}`;
                   return await models.draftLocal.generateContent(compactPrompt);
                 }
               }
