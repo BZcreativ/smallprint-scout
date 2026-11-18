@@ -267,6 +267,22 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
   await resyncTab();
 });
 
+// Follow navigations/redirects within the active tab so the per-site toggle
+// and candidate list stay accurate.
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  if (!currentTab || currentTab.id !== tabId) return;
+  if (!changeInfo.url && changeInfo.status !== "complete") return;
+  currentTab = tab;
+  if (changeInfo.url) {
+    candidatesByFrame.clear();
+    renderCandidates();
+  }
+  await refreshToggle();
+  if (changeInfo.status === "complete") {
+    await resyncTab();
+  }
+});
+
 // The background may have read the text before this panel was ready, so the
 // panel asks for it once it is up.
 chrome.runtime

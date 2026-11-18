@@ -3,7 +3,7 @@
   "name": "SmallPrint Scout",
   "version": "0.1.0",
   "description": "Scan consumer agreements on-device with Gemini Nano before you sign.",
-  "permissions": ["activeTab", "scripting", "sidePanel", "contextMenus", "storage"],
+  "permissions": ["activeTab", "scripting", "sidePanel", "contextMenus", "storage", "tabs"],
   "optional_host_permissions": ["*://*/*"],
   "background": {
     "service_worker": "background.js"
