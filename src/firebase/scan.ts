@@ -1,5 +1,6 @@
 import { parseTriage, ScanParseError } from "../domain/parse-result";
-import { verifyQuotes } from "../domain/verify-quotes";
+import { MAX_FINDINGS, normalizeForMatch, verifyQuotes } from "../domain/verify-quotes";
+import { chunkText, SINGLE_PASS_MAX } from "../domain/input";
 import type { InferenceRoute, TriageResult } from "../domain/types";
 
 // The first-pass triage scan.
@@ -93,6 +94,80 @@ export async function runFirstPassScan(
   return {
     data: verifyQuotes(data, text),
     route: toRoute(response.response.inferenceSource),
+    durationMs: Math.round(performance.now() - started),
+  };
+}
+
+// Merges the per-chunk triage answers of a long scan into one result.
+// Chunks are verbatim slices of the original document, so each chunk's
+// findings were already quote-verified by runFirstPassScan against text that
+// is inside the original — no re-verification is needed here. The same clause
+// can be reported by neighbouring chunks (a clause cut across a boundary),
+// so findings and key dates are deduplicated by their normalized quote.
+export function mergeTriage(parts: TriageResult[]): TriageResult {
+  const riskRank = { LOW: 0, MEDIUM: 1, HIGH: 2 };
+  const severityRank = { INFO: 0, WATCH: 1, HIGH: 2 };
+  // The summary that travels with the result is the one from the riskiest
+  // chunk: its findings are the ones the merged top-3 will mostly show.
+  const worst = parts.reduce((a, b) => (riskRank[b.overallRisk] > riskRank[a.overallRisk] ? b : a));
+
+  function dedupByKey<T>(items: T[], key: (item: T) => string): T[] {
+    const seen = new Set<string>();
+    return items.filter((item) => {
+      const k = key(item);
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+  }
+
+  const findings = dedupByKey(parts.flatMap((p) => p.findings), (f) => normalizeForMatch(f.quote))
+    .sort((a, b) => severityRank[b.severity] - severityRank[a.severity])
+    .slice(0, MAX_FINDINGS);
+
+  const keyDates = dedupByKey(parts.flatMap((p) => p.keyDates), (k) => normalizeForMatch(k.sourceQuote));
+  const unknowns = [...new Set(parts.flatMap((p) => p.unknowns))];
+
+  return {
+    documentType: parts.map((p) => p.documentType).find((t) => t !== "OTHER") ?? "OTHER",
+    overallRisk: worst.overallRisk,
+    summary: worst.summary,
+    findings,
+    keyDates,
+    unknowns,
+  };
+}
+
+// Scans a document that is longer than one on-device prompt: cut it into
+// paragraph-aligned chunks, run a normal first pass on each (its own retry
+// chain and quote verification), and merge the answers. Chunks run
+// sequentially, never in parallel — on-device has no rate limit but the cloud
+// fallback does (5 requests/minute), and one chunk failing must not spend the
+// others' retries at the same time.
+export async function runLongScan(
+  text: string,
+  generate: GenerateFn,
+  retryGenerate: GenerateFn = generate,
+): Promise<ScanEnvelope> {
+  const chunks = chunkText(text, SINGLE_PASS_MAX);
+  const started = performance.now();
+
+  const envelopes: ScanEnvelope[] = [];
+  for (const chunk of chunks) {
+    envelopes.push(await runFirstPassScan(chunk, generate, retryGenerate));
+  }
+
+  // Never assume on-device: one chunk that fell back to the cloud (or one
+  // whose route could not be read) makes the merged route honest about it.
+  const route: InferenceRoute = envelopes.some((e) => e.route === "IN_CLOUD")
+    ? "IN_CLOUD"
+    : envelopes.every((e) => e.route === "ON_DEVICE")
+      ? "ON_DEVICE"
+      : "UNKNOWN";
+
+  return {
+    data: mergeTriage(envelopes.map((e) => e.data)),
+    route,
     durationMs: Math.round(performance.now() - started),
   };
 }

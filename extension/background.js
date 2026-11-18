@@ -72,11 +72,19 @@ chrome.runtime.onInstalled.addListener(() => {
   });
 });
 
-// The selection when there is one, the whole page otherwise.
+// The selection when there is one; otherwise the text of an open consent
+// dialog (a modal covers the page, so its notice is what the user actually
+// sees — and innerText of a hidden dialog node is empty, so a stale
+// [role="dialog"] element never wins); the whole page as a last resort.
+// Same one-liner trio as in sidepanel.js: the service worker is a classic
+// script and cannot import the module that holds it.
 function readText() {
   const selection = window.getSelection();
   const selected = selection ? selection.toString().trim() : "";
-  return selected || document.body.innerText;
+  if (selected) return selected;
+  const dialog = document.querySelector('dialog[open], [role="dialog"]');
+  const dialogText = dialog && dialog.innerText ? dialog.innerText.trim() : "";
+  return dialogText || document.body.innerText;
 }
 
 // Reads the text of a tab.

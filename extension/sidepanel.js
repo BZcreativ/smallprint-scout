@@ -17,11 +17,19 @@ const hint = document.getElementById("detect-hint");
 let currentTab = null; // the tab this panel is looking at
 const candidatesByFrame = new Map(); // frameId -> candidate items of that frame
 
-// The selection when there is one, the whole page otherwise.
+// The selection when there is one; otherwise the text of an open consent
+// dialog (a modal covers the page, so its notice is what the user actually
+// sees — and innerText of a hidden dialog node is empty, so a stale
+// [role="dialog"] element never wins); the whole page as a last resort.
+// Same one-liner trio as in background.js: the panel is a module, the service
+// worker is not, and this function is executed inside the tab anyway.
 function readText() {
   const selection = window.getSelection();
   const selected = selection ? selection.toString().trim() : "";
-  return selected || document.body.innerText;
+  if (selected) return selected;
+  const dialog = document.querySelector('dialog[open], [role="dialog"]');
+  const dialogText = dialog && dialog.innerText ? dialog.innerText.trim() : "";
+  return dialogText || document.body.innerText;
 }
 
 // Hands the text to the app. The app checks that the message came from an
@@ -210,19 +218,19 @@ async function scanItem(item, button) {
 
   if (origin) {
     const pattern = origin + "/*";
-    let granted = await chrome.permissions.contains({ origins: [pattern] });
-    if (!granted) granted = await chrome.permissions.request({ origins: [pattern] });
+    const granted = await chrome.permissions.request({ origins: [pattern] });
 
     if (granted) {
       button.textContent = "Loading...";
       let text = "";
       try {
-        const html = await (await fetch(item.href)).text();
+        const html = await (await fetch(item.href, { credentials: "include" })).text();
         const doc = new DOMParser().parseFromString(html, "text/html");
         if (doc.body) {
           doc.body.querySelectorAll("script, style, noscript, svg, nav, header, footer").forEach((el) => el.remove());
-          // 6000 is the app's paste-box limit.
-          text = (doc.body.textContent || "").replace(/\s+/g, " ").trim().slice(0, 6000);
+          // 120000 is the app's input cap (MAX_LENGTH in src/domain/input.ts);
+          // the app splits longer text into section scans itself.
+          text = (doc.body.textContent || "").replace(/\s+/g, " ").trim().slice(0, 120000);
         }
       } catch {
         // Offline, blocked, or a 404: fall back below.

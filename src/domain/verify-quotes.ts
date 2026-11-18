@@ -8,7 +8,7 @@ import type { Finding, KeyDate, TriageResult } from "./types";
 // keeps its wording and is labelled "unverified" in the UI.
 
 const MIN_QUOTE_LENGTH = 8;
-const MAX_FINDINGS = 3;
+export const MAX_FINDINGS = 3;
 
 export function normalizeForMatch(s: string): string {
   return s

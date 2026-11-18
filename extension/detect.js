@@ -18,8 +18,9 @@
   globalThis.__scoutDetectActive = true;
 
   var MAX_CANDIDATES = 10;
-  // The app's paste box rejects anything longer, so send at most this much.
-  var MAX_TEXT = 6000;
+  // 120000 = MAX_LENGTH in the app's src/domain/input.ts; longer text is
+  // split into section scans by the app itself.
+  var MAX_TEXT = 120000;
   var FRAME_KEY = Math.random().toString(36).slice(2, 7);
   var seq = 0;
   var ids = new WeakMap();

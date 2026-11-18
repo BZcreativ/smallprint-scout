@@ -38,8 +38,6 @@ export function InputScreen({
   const validation = validateInput(text);
   const hasText = text.trim().length > 0;
   const invalid = hasText && !validation.ok;
-  // A whole page is longer than one scan, so the way out is a section rather
-  // than the page: the extension can send just the selected part.
   const overLimit = text.trim().length > MAX_LENGTH;
 
   async function loadSample(id: string) {
@@ -117,7 +115,7 @@ export function InputScreen({
       {invalid && !formError && <p className="error">{validation.message}</p>}
       {overLimit && (
         <p className="hint">
-          Tip: select one section on the page and right-click → Scan selection in SmallPrint Scout.
+          Tip: that is above the scan limit — paste the sections that matter, not the whole document.
         </p>
       )}
 
@@ -141,7 +139,9 @@ export function InputScreen({
       {deviceStatus !== "available" && (
         <p className="hint">The private scan needs the on-device model. The cloud scan works without it.</p>
       )}
-      {busy && <p className="hint">Scanning…</p>}
+      {busy && (
+        <p className="hint">Scanning… long documents are read section by section and can take a minute.</p>
+      )}
     </section>
   );
 }

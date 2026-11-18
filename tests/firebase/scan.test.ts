@@ -1,6 +1,7 @@
 import { expect, test, vi } from "vitest";
-import { quotaDetail, rateLimitHint, runFirstPassScan, toRoute } from "../../src/firebase/scan";
+import { mergeTriage, quotaDetail, rateLimitHint, runFirstPassScan, runLongScan, toRoute } from "../../src/firebase/scan";
 import { ScanParseError } from "../../src/domain/parse-result";
+import type { Finding, TriageResult } from "../../src/domain/types";
 
 // Sample 2 from docs/spec.md §5.
 const SAMPLE = `CloudWork Pro — Subscription & Billing Terms (Section 4)
@@ -73,4 +74,113 @@ test("succeeds on retry and reports route", async () => {
   expect(r.route).toBe("ON_DEVICE");
   expect(gen).toHaveBeenCalledTimes(2);
   expect(r.data.findings[0].quoteVerified).toBe(true);
+});
+
+// --- long-document scanning (runLongScan / mergeTriage) ---
+
+function triage(overrides: Partial<TriageResult>): TriageResult {
+  return {
+    documentType: "OTHER",
+    overallRisk: "LOW",
+    summary: "s",
+    findings: [],
+    keyDates: [],
+    unknowns: [],
+    ...overrides,
+  };
+}
+
+function findingOf(quote: string, severity: Finding["severity"] = "HIGH"): Finding {
+  return {
+    category: "RENEWAL",
+    severity,
+    quote,
+    plainEnglish: "p",
+    whyItMatters: "w",
+    nextStep: "n",
+    confidence: "HIGH",
+    quoteVerified: true,
+  };
+}
+
+const triageJson = (quote: string) =>
+  JSON.stringify({
+    documentType: "SUBSCRIPTION_TERMS",
+    overallRisk: "HIGH",
+    summary: "Chunk summary.",
+    findings: [
+      {
+        category: "REFUND",
+        severity: "HIGH",
+        quote,
+        plainEnglish: "p",
+        whyItMatters: "w",
+        nextStep: "n",
+        confidence: "HIGH",
+      },
+    ],
+    keyDates: [],
+    unknowns: [],
+  });
+
+test("mergeTriage dedups quotes, keeps the worst risk, and caps findings", () => {
+  const dup = "All prepaid annual fees are non-refundable";
+  const parts = [
+    triage({ findings: [findingOf(dup), findingOf("Auto-renewal continues unless disabled 30 days before", "WATCH")], unknowns: ["u1"] }),
+    triage({
+      documentType: "SUBSCRIPTION_TERMS",
+      overallRisk: "HIGH",
+      summary: "The risky chunk.",
+      findings: [findingOf(dup), findingOf("We may change fees at any time", "INFO"), findingOf("Third clause"), findingOf("Fourth clause", "WATCH")],
+      unknowns: ["u1", "u2"],
+    }),
+  ];
+
+  const merged = mergeTriage(parts);
+  expect(merged.overallRisk).toBe("HIGH");
+  expect(merged.summary).toBe("The risky chunk.");
+  expect(merged.documentType).toBe("SUBSCRIPTION_TERMS");
+  expect(merged.unknowns).toEqual(["u1", "u2"]);
+  // The duplicate quote collapsed, severity ranked first, capped at 3.
+  expect(merged.findings.map((f) => f.quote)).toEqual([
+    dup,
+    "Third clause",
+    "Auto-renewal continues unless disabled 30 days before",
+  ]);
+});
+
+test("runLongScan scans each chunk and merges verified findings", async () => {
+  const q1 = "All prepaid annual fees are non-refundable";
+  const q2 = "We may change the fees at any time upon notice";
+  // Two self-contained halves: the first 6,000-char window cuts at the "\n\n"
+  // between them, so chunk 1 holds q1 and chunk 2 holds q2.
+  const part = (quote: string, ch: string) => `${quote}. ${ch.repeat(4000)}`;
+  const text = `${part(q1, "x")}\n\n${part(q2, "y")}`;
+
+  const gen = vi.fn(async (prompt: string) => ({
+    response: { text: () => triageJson(prompt.includes(q1) ? q1 : q2), inferenceSource: "on_device" },
+  }));
+
+  const r = await runLongScan(text, gen);
+  expect(gen).toHaveBeenCalledTimes(2);
+  expect(r.route).toBe("ON_DEVICE");
+  expect(r.data.findings.map((f) => f.quote)).toEqual([q1, q2]);
+  expect(r.data.findings.every((f) => f.quoteVerified)).toBe(true);
+});
+
+test("runLongScan reports IN_CLOUD if any chunk left the device", async () => {
+  const q1 = "All prepaid annual fees are non-refundable";
+  const q2 = "We may change the fees at any time upon notice";
+  const part = (quote: string, ch: string) => `${quote}. ${ch.repeat(4000)}`;
+  const text = `${part(q1, "x")}\n\n${part(q2, "y")}`;
+
+  const gen = vi.fn(async (prompt: string) => ({
+    response: {
+      text: () => triageJson(prompt.includes(q1) ? q1 : q2),
+      inferenceSource: prompt.includes(q1) ? "on_device" : "in_cloud",
+    },
+  }));
+
+  const r = await runLongScan(text, gen);
+  expect(r.route).toBe("IN_CLOUD");
 });

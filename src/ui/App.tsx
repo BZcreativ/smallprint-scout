@@ -4,7 +4,8 @@ import { signInWithGoogle, signOutUser, useAuthUser } from "../firebase/auth";
 import { clearScanHistory, listRecentScans, saveScanSummary, type SavedScan } from "../firebase/scans";
 import { DOCUMENT_TYPES, toScanSummary, type ScanSummary } from "../domain/scan-summary";
 import { ScanParseError } from "../domain/parse-result";
-import { quotaDetail, rateLimitHint, runFirstPassScan, type ScanEnvelope } from "../firebase/scan";
+import { quotaDetail, rateLimitHint, runFirstPassScan, runLongScan, type ScanEnvelope } from "../firebase/scan";
+import { SINGLE_PASS_MAX } from "../domain/input";
 import { models, slimResponseConstraint } from "../firebase/models";
 import { getDeviceStatus, initDeviceModel, type DeviceStatus } from "../firebase/device";
 import { runCloudLegalResearch, type CloudResearch } from "../firebase/research";
@@ -252,7 +253,14 @@ async function runScan(text: string, route: ScanRoute) {
         route === "local"
           ? () => localFallbackGenerate(text)
           : (prompt: string) => models.cloudTriageFallback.generateContent(prompt, { timeout: CLOUD_TIMEOUT_MS });
-      const scan = await runFirstPassScan(text, generate, retry);
+      // Only the on-device route needs chunking: its prompt window is ~6,000
+      // characters. The cloud models take the whole document in one request,
+      // and chunking there would trip the free tier's 5-requests-per-minute
+      // limit on any real policy.
+      const scan =
+        route === "local" && text.length > SINGLE_PASS_MAX
+          ? await runLongScan(text, generate, retry)
+          : await runFirstPassScan(text, generate, retry);
       setScreen({ name: "results", source: text, scan });
       await saveSummary(scan);
     } catch (e) {
