@@ -123,7 +123,7 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     });
 });
 
-chrome.runtime.onMessage.addListener((message, sender, _sendResponse) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message) return false;
 
   // The detector reports what it found: the toolbar badge counts it, so the
