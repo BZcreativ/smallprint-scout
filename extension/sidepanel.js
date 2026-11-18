@@ -12,6 +12,7 @@ const ORIGINS_KEY = "scout-origins";
 const autoDetect = document.getElementById("auto-detect");
 const section = document.getElementById("candidates");
 const list = document.getElementById("candidate-list");
+const hint = document.getElementById("detect-hint");
 
 let currentTab = null; // the tab this panel is looking at
 const candidatesByFrame = new Map(); // frameId -> candidate items of that frame
@@ -74,6 +75,24 @@ async function refreshToggle() {
   autoDetect.disabled = !origin;
   autoDetect.title = origin ? "" : "Open this panel on an http(s) page first";
   autoDetect.checked = origin !== null && (await chrome.permissions.contains({ origins: [origin + "/*"] }));
+  hint.textContent = autoDetect.checked
+    ? "Auto-detect is on. Terms links, consent checkboxes and popups found on this page appear below."
+    : "Auto-detect is off. Turn it on to spot terms links, consent checkboxes and popups.";
+}
+
+// The panel opened, the tab changed, or auto-detect was just enabled: ask the
+// detector in the page to report now (it may have found things before this
+// panel was up), and take the badge over.
+async function resyncTab() {
+  if (!currentTab || typeof currentTab.id !== "number") return;
+  try {
+    await chrome.tabs.sendMessage(currentTab.id, { type: "SCOUT_RESYNC" });
+  } catch {
+    // No detector in this tab: auto-detect is off or not injected yet.
+  }
+  chrome.action.setBadgeText({ tabId: currentTab.id, text: "" }).catch(() => {
+    // The tab may be gone already.
+  });
 }
 
 async function enableAutoDetect(tab, origin) {
@@ -135,6 +154,7 @@ async function disableAutoDetect(tab, origin) {
   } catch {
     // No detector in this tab right now.
   }
+  chrome.action.setBadgeText({ tabId: tab.id, text: "" }).catch(() => {});
 }
 
 autoDetect.addEventListener("change", async () => {
@@ -147,6 +167,7 @@ autoDetect.addEventListener("change", async () => {
   try {
     if (autoDetect.checked) {
       await enableAutoDetect(tab, origin);
+      await resyncTab();
     } else {
       await disableAutoDetect(tab, origin);
     }
@@ -165,9 +186,10 @@ document.getElementById("scan-page").addEventListener("click", () => {
 });
 
 function kindName(kind) {
-  if (kind === "checkbox") return "consent";
-  if (kind === "dense") return "legal text";
-  return "link";
+  if (kind === "checkbox") return "Checkbox";
+  if (kind === "dense") return "Legal text";
+  if (kind === "button") return "Consent button";
+  return "Terms link";
 }
 
 function renderCandidates() {
@@ -187,7 +209,7 @@ function renderCandidates() {
 
     const kind = document.createElement("span");
     kind.className = "kind";
-    kind.textContent = item.dialog ? kindName(item.kind) + " · dialog" : kindName(item.kind);
+    kind.textContent = item.dialog ? kindName(item.kind) + " · popup" : kindName(item.kind);
     row.append(kind);
 
     const focus = document.createElement("button");
@@ -242,6 +264,7 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
   candidatesByFrame.clear();
   renderCandidates();
   await refreshToggle();
+  await resyncTab();
 });
 
 // The background may have read the text before this panel was ready, so the
@@ -263,4 +286,5 @@ chrome.runtime
 (async () => {
   currentTab = await findActiveTab();
   await refreshToggle();
+  await resyncTab();
 })();

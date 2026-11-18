@@ -115,8 +115,23 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     });
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, sender, _sendResponse) => {
   if (!message) return false;
+
+  // The detector reports what it found: the toolbar badge counts it, so the
+  // user knows to open the panel. No sidePanel.open() here: that only works
+  // inside a user gesture.
+  if (message.type === "SMALLPRINT_CANDIDATES" && sender.tab && typeof sender.tab.id === "number") {
+    const count = Array.isArray(message.items) ? message.items.length : 0;
+    const tabId = sender.tab.id;
+    chrome.action.setBadgeText({ tabId, text: count > 0 ? String(count) : "" }).catch(() => {
+      // The tab may be gone already.
+    });
+    if (count > 0) {
+      chrome.action.setBadgeBackgroundColor({ tabId, color: "#2563eb" }).catch(() => {});
+    }
+    return false;
+  }
 
   // The panel asks whether the context menu asked for a scan.
   if (message.type === "SMALLPRINT_PENDING_TEXT") {

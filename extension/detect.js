@@ -77,6 +77,12 @@
       if (cScore > 0) {
         out.push({ el: el, kind: 'checkbox', score: cScore + (dialogNow ? 2 : 0), dialog: dialogNow, label: context.slice(0, 80) || 'Consent checkbox', text: context.slice(0, MAX_TEXT) });
       }
+    } else if (tag === 'BUTTON' || el.getAttribute('role') === 'button') {
+      var bLabel = (el.getAttribute('aria-label') || el.textContent || '').trim().slice(0, 120);
+      var bScore = el.closest('nav') ? 0 : core.buttonScore(bLabel);
+      if (bScore > 0) {
+        out.push({ el: el, kind: 'button', score: bScore + (dialogNow ? 2 : 0), dialog: dialogNow, label: bLabel, text: bLabel });
+      }
     } else if (!denseNow && DENSE_TAGS[tag] && el.children.length <= 2) {
       var text = el.textContent || '';
       if (text.length > 800) {
@@ -112,6 +118,13 @@
         // innerText is only read for the shortlisted few; it forces layout.
         text = ((c.el.innerText || c.el.textContent || '').trim() || '').slice(0, MAX_TEXT);
       }
+      if (c.kind === 'button' && c.dialog) {
+        // "Accepter tout" alone tells the app nothing: Scan should carry the
+        // whole consent notice the button lives in.
+        var dlg = c.el.closest('dialog[open], [role="dialog"]');
+        var dlgText = dlg ? (dlg.innerText || '').trim() : '';
+        if (dlgText.length > text.length) text = dlgText.slice(0, MAX_TEXT);
+      }
       var item = { id: candidates[i].id, kind: c.kind, label: c.label, rect: rectOf(c.el), text: text };
       if (c.dialog) item.dialog = true;
       return item;
@@ -121,6 +134,17 @@
       // No side panel open yet; the next scan reports again.
     });
     renderBoxes();
+  }
+
+  // ponytail: fixed/absolute + z-index>99 also catches sticky headers with a
+  // big z-index; raise the threshold or check viewport centering if noisy.
+  function inOverlay(el) {
+    for (var a = el.parentElement, depth = 0; a && depth < 8; a = a.parentElement, depth++) {
+      if (a.id === 'scout-layer') break;
+      var cs = getComputedStyle(a);
+      if ((cs.position === 'fixed' || cs.position === 'absolute') && parseInt(cs.zIndex, 10) > 99) return true;
+    }
+    return false;
   }
 
   function scan() {
@@ -137,7 +161,21 @@
     raw.sort(function (a, b) {
       return b.score - a.score;
     });
-    publish(raw.slice(0, MAX_CANDIDATES));
+
+    // The style walk is expensive, so it runs for the shortlisted few only:
+    // a candidate in a fixed/high-z-index layer is in a modal, same as
+    // dialog[open] / [role="dialog"].
+    var top = raw.slice(0, MAX_CANDIDATES);
+    top.forEach(function (c) {
+      if (!c.dialog && inOverlay(c.el)) {
+        c.dialog = true;
+        c.score += 2;
+      }
+    });
+    top.sort(function (a, b) {
+      return b.score - a.score;
+    });
+    publish(top);
   }
 
   // The highlight layer: one host div, one closed shadow root. The page can
@@ -247,6 +285,12 @@
       sendResponse({ found: true });
       return false;
     }
+    if (message.type === 'SCOUT_RESYNC') {
+      // The panel just opened or the tab became active: report now instead
+      // of waiting for the next mutation.
+      scan();
+      return false;
+    }
     if (message.type === 'SCOUT_DISABLE') {
       if (observer) observer.disconnect();
       if (host) host.remove();
@@ -266,13 +310,19 @@
   document.addEventListener('scroll', queueReposition, true);
   window.addEventListener('resize', queueReposition);
 
-  // SPAs and modals: rescan 200ms after the DOM settles.
+  // SPAs and modals: rescan 200ms after the DOM settles. Attribute changes
+  // matter too: consent banners are revealed by removing a hidden class.
   var timer = 0;
   observer = new MutationObserver(function () {
     clearTimeout(timer);
     timer = setTimeout(scan, 200);
   });
-  observer.observe(document.documentElement, { childList: true, subtree: true });
+  observer.observe(document.documentElement, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['class', 'style', 'hidden', 'open', 'aria-hidden'],
+  });
 
   scan();
 })();

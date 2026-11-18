@@ -4,8 +4,11 @@
 (function (global) {
   'use strict';
 
-  var LINK_RE = /\b(terms?|tos|conditions?|privacy|eula|agreement|polic(?:y|ies)|legal|refund|cancel)\b/i;
-  var CONSENT_RE = /\b(i agree|i accept|accept|acknowledge|consent)\b/i;
+  // EU stems are unaccented where the accent trails the stem (confidentialité
+  // matches "confidentialit" + boundary because é is not a \w char); accents
+  // inside the word are spelled out (política).
+  var LINK_RE = /\b(terms?|tos|conditions?|privacy|eula|agreement|polic(?:y|ies)|legal|refund|cancel|politique|pol[ií]tica|datenschutz|cookies?|confidentialit|vie priv|mentions l|cgu|cgv|impressum|aviso legal)\b/i;
+  var CONSENT_RE = /\b(accept(?:e[rz]?)?|i agree|acknowledge|consent|refus(?:e[rz]?)?|param[eè]tres|akzeptieren|ablehnen|zustimmen|aceptar|rechazar|accettare|rifiutare)\b/i;
   var BY_CLICKING_RE = /by (?:clicking|using|continuing)[\s\S]{0,120}?you agree/i;
 
   // > 0 only when the link's visible text or its href names a legal page.
@@ -28,6 +31,14 @@
     var score = inLabel ? 5 : 4;
     if (byClicking) score += 2;
     return score;
+  }
+
+  // > 0 only when a button's label is consent language. Nav and shop buttons
+  // ("Menu", "Search", "Buy") never match; long texts are not button labels.
+  function buttonScore(text) {
+    var t = (text || '').trim();
+    if (!t || t.length > 60) return 0;
+    return CONSENT_RE.test(t) ? 4 : 0;
   }
 
   var DENSE_MIN_CHARS = 800;
@@ -55,6 +66,7 @@
     CONSENT_RE: CONSENT_RE,
     BY_CLICKING_RE: BY_CLICKING_RE,
     linkScore: linkScore,
+    buttonScore: buttonScore,
     checkboxScore: checkboxScore,
     denseScore: denseScore,
     frameWorthScanning: frameWorthScanning,

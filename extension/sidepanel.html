@@ -47,6 +47,14 @@
         white-space: nowrap;
       }
 
+      #detect-hint {
+        margin: 0;
+        padding: 5px 10px;
+        font-size: 11px;
+        color: #5f6b7a;
+        border-bottom: 1px solid #d9dde3;
+      }
+
       #candidates {
         max-height: 40%;
         overflow-y: auto;
@@ -103,6 +111,8 @@
       </label>
       <button id="scan-page" type="button">Scan this page</button>
     </header>
+
+    <p id="detect-hint"></p>
 
     <section id="candidates" hidden aria-label="Agreement candidates found on this page">
       <h2>Found on this page</h2>

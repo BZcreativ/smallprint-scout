@@ -70,3 +70,59 @@ test("frameWorthScanning stops frames with no legal or consent words", () => {
   expect(core.frameWorthScanning("Watch the match highlights from last night.")).toBe(false);
   expect(core.frameWorthScanning("")).toBe(false);
 });
+
+test("linkScore scores French legal links", () => {
+  expect(core.linkScore("Politique de confidentialité", "/politique")).toBeGreaterThan(0);
+  expect(core.linkScore("Gestion des cookies", "/cookies")).toBeGreaterThan(0);
+  expect(core.linkScore("Mentions légales", "/mentions-legales")).toBeGreaterThan(0);
+  expect(core.linkScore("CGU", "/cgu")).toBeGreaterThan(0);
+});
+
+test("linkScore scores German and Spanish legal links", () => {
+  expect(core.linkScore("Datenschutz", "/datenschutz")).toBeGreaterThan(0);
+  expect(core.linkScore("Impressum", "/impressum")).toBeGreaterThan(0);
+  expect(core.linkScore("Aviso legal", "/aviso-legal")).toBeGreaterThan(0);
+  expect(core.linkScore("Política de privacidad", "/privacidad")).toBeGreaterThan(0);
+});
+
+test("buttonScore scores consent buttons in FR/DE/ES/IT", () => {
+  expect(core.buttonScore("Accepter tout")).toBeGreaterThan(0);
+  expect(core.buttonScore("Refuser tout")).toBeGreaterThan(0);
+  expect(core.buttonScore("Vos paramètres de confidentialité")).toBeGreaterThan(0);
+  expect(core.buttonScore("Alle akzeptieren")).toBeGreaterThan(0);
+  expect(core.buttonScore("Ablehnen")).toBeGreaterThan(0);
+  expect(core.buttonScore("Aceptar")).toBeGreaterThan(0);
+  expect(core.buttonScore("Rechazar")).toBeGreaterThan(0);
+  expect(core.buttonScore("Accettare")).toBeGreaterThan(0);
+  expect(core.buttonScore("Rifiutare")).toBeGreaterThan(0);
+});
+
+test("buttonScore rejects nav and shop buttons", () => {
+  expect(core.buttonScore("Menu")).toBe(0);
+  expect(core.buttonScore("Search")).toBe(0);
+  expect(core.buttonScore("Add to cart")).toBe(0);
+});
+
+test("buttonScore rejects long text that is not a button label", () => {
+  const paragraph =
+    "Nous et nos partenaires utilisons des cookies afin que vous puissiez accepter et personnaliser votre expérience.";
+  expect(paragraph.length).toBeGreaterThan(60);
+  expect(core.buttonScore(paragraph)).toBe(0);
+});
+
+test("frameWorthScanning lets a French consent modal through", () => {
+  expect(
+    core.frameWorthScanning("Votre vie privée est importante pour nous. Vos paramètres de confidentialité."),
+  ).toBe(true);
+  expect(core.frameWorthScanning("Wir und unsere Partner verwenden Cookies. Datenschutz-Einstellungen.")).toBe(true);
+});
+
+test("denseScore scores a Yahoo-style French consent modal", () => {
+  const fr =
+    "Nous utilisons des cookies pour personnaliser les contenus et mesurer l'audience. Votre vie privée est importante pour nous. Consultez notre politique de confidentialité et la politique concernant les cookies. ";
+  expect(core.denseScore(fr.repeat(5))).toBe(3);
+});
+
+test("checkboxScore scores French consent context", () => {
+  expect(core.checkboxScore("", "En continuant, vous acceptez nos conditions générales.")).toBe(4);
+});
