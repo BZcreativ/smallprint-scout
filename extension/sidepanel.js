@@ -192,6 +192,57 @@ function kindName(kind) {
   return "Terms link";
 }
 
+// Scans a candidate. A terms link with an http(s) href is fetched and its
+// document's text goes to the app; anything else (or a fetch that is denied,
+// fails, or yields too little) falls back to the text captured on the page,
+// which for a dialog candidate is the whole consent notice.
+async function scanItem(item, button) {
+  const fallback = String(item.text || "");
+  let origin = null;
+  if (typeof item.href === "string") {
+    try {
+      const url = new URL(item.href);
+      if (url.protocol === "http:" || url.protocol === "https:") origin = url.origin;
+    } catch {
+      origin = null;
+    }
+  }
+
+  if (origin) {
+    const pattern = origin + "/*";
+    let granted = await chrome.permissions.contains({ origins: [pattern] });
+    if (!granted) granted = await chrome.permissions.request({ origins: [pattern] });
+
+    if (granted) {
+      button.textContent = "Loading...";
+      let text = "";
+      try {
+        const html = await (await fetch(item.href)).text();
+        const doc = new DOMParser().parseFromString(html, "text/html");
+        if (doc.body) {
+          doc.body.querySelectorAll("script, style, noscript, svg, nav, header, footer").forEach((el) => el.remove());
+          // 6000 is the app's paste-box limit.
+          text = (doc.body.textContent || "").replace(/\s+/g, " ").trim().slice(0, 6000);
+        }
+      } catch {
+        // Offline, blocked, or a 404: fall back below.
+      }
+      button.textContent = "Scan";
+
+      if (text.length >= 80) {
+        hint.textContent = "Scanned the page the selected link points to.";
+        postToApp(text);
+        return;
+      }
+      hint.textContent = "Could not read the linked page, so the text shown on this page was scanned instead.";
+    } else {
+      hint.textContent = "Permission to read the linked page was not granted, so the text shown on this page was scanned instead.";
+    }
+  }
+
+  postToApp(fallback);
+}
+
 function renderCandidates() {
   const items = [];
   for (const frameItems of candidatesByFrame.values()) items.push(...frameItems);
@@ -226,7 +277,7 @@ function renderCandidates() {
     const scan = document.createElement("button");
     scan.type = "button";
     scan.textContent = "Scan";
-    scan.addEventListener("click", () => postToApp(String(item.text || "")));
+    scan.addEventListener("click", () => scanItem(item, scan));
     row.append(scan);
 
     list.append(row);

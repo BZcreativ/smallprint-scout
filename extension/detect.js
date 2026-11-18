@@ -67,7 +67,9 @@
       var label = (el.textContent || '').trim().slice(0, 120);
       var score = core.linkScore(label, el.getAttribute('href'));
       if (score > 0) {
-        out.push({ el: el, kind: 'link', score: score + (dialogNow ? 2 : 0), dialog: dialogNow, label: label, text: label });
+        // el.href is the absolute URL; only http(s) pages can be fetched by
+        // the panel later.
+        out.push({ el: el, kind: 'link', score: score + (dialogNow ? 2 : 0), dialog: dialogNow, label: label, text: label, href: /^https?:$/.test(el.protocol) ? el.href : '' });
       }
     } else if (tag === 'INPUT' && el.type === 'checkbox') {
       // ponytail: only ancestor-or-label context; a <label for> elsewhere is missed
@@ -118,14 +120,16 @@
         // innerText is only read for the shortlisted few; it forces layout.
         text = ((c.el.innerText || c.el.textContent || '').trim() || '').slice(0, MAX_TEXT);
       }
-      if (c.kind === 'button' && c.dialog) {
-        // "Accepter tout" alone tells the app nothing: Scan should carry the
-        // whole consent notice the button lives in.
+      if (c.dialog) {
+        // "Accepter tout" alone, or a "Privacy Policy" link's short label,
+        // tells the app nothing: Scan should be able to fall back to the
+        // whole consent notice the candidate lives in.
         var dlg = c.el.closest('dialog[open], [role="dialog"]');
         var dlgText = dlg ? (dlg.innerText || '').trim() : '';
         if (dlgText.length > text.length) text = dlgText.slice(0, MAX_TEXT);
       }
       var item = { id: candidates[i].id, kind: c.kind, label: c.label, rect: rectOf(c.el), text: text };
+      if (c.href) item.href = c.href;
       if (c.dialog) item.dialog = true;
       return item;
     });
@@ -139,6 +143,9 @@
   // ponytail: fixed/absolute + z-index>99 also catches sticky headers with a
   // big z-index; raise the threshold or check viewport centering if noisy.
   function inOverlay(el) {
+    // Sticky headers live in fixed high-z-index layers too; they are not
+    // popups.
+    if (el.closest('header, nav')) return false;
     for (var a = el.parentElement, depth = 0; a && depth < 8; a = a.parentElement, depth++) {
       if (a.id === 'scout-layer') break;
       var cs = getComputedStyle(a);

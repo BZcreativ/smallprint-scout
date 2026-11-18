@@ -11,13 +11,32 @@
   var CONSENT_RE = /\b(accept(?:e[rz]?)?|i agree|acknowledge|consent|refus(?:e[rz]?)?|param[eè]tres|akzeptieren|ablehnen|zustimmen|aceptar|rechazar|accettare|rifiutare)\b/i;
   var BY_CLICKING_RE = /by (?:clicking|using|continuing)[\s\S]{0,120}?you agree/i;
 
+  // The part of an href that names the destination page: hostname plus the
+  // final non-empty path segment. Query strings carry tracking junk that can
+  // coincidentally contain "terms", so they never count.
+  function hrefTail(href) {
+    var s = String(href || '').split(/[?#]/)[0];
+    var m = s.match(/^[a-z][a-z0-9+.-]*:\/\/([^/?#]*)(?:\/(.*))?$/i);
+    var host = '';
+    if (m) {
+      host = m[1];
+      s = m[2] || '';
+    }
+    s = s.replace(/\/+$/, '');
+    return host + '/' + s.slice(s.lastIndexOf('/') + 1);
+  }
+
   // > 0 only when the link's visible text or its href names a legal page.
   // A visible text match is worth more than a URL match: the label is what
-  // the user was about to click.
+  // the user was about to click. A long anchor is a news card or a paragraph
+  // link, not a terms link, so its keyword counts as coincidence.
   function linkScore(text, href) {
-    var score = (LINK_RE.test(text || '') ? 3 : 0) + (LINK_RE.test(href || '') ? 2 : 0);
+    var t = (text || '').trim();
+    var score =
+      (t.length > 0 && t.length <= 60 && LINK_RE.test(t) ? 3 : 0) +
+      (LINK_RE.test(hrefTail(href)) ? 2 : 0);
     if (score === 0) return 0;
-    return score + (text && text.trim() ? 1 : 0);
+    return score + (t ? 1 : 0);
   }
 
   // > 0 only when the checkbox itself or the text around it asks for consent.

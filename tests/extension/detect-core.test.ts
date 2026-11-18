@@ -71,6 +71,27 @@ test("frameWorthScanning stops frames with no legal or consent words", () => {
   expect(core.frameWorthScanning("")).toBe(false);
 });
 
+test("linkScore ignores legal words buried in a long news-card anchor", () => {
+  const card =
+    "Breaking: regulators update the platform's data terms and privacy policy rules for developers, and here is what changes for you";
+  expect(card.length).toBeGreaterThan(60);
+  expect(core.linkScore(card, "/news/story-of-the-day")).toBe(0);
+});
+
+test("linkScore keeps scoring a short legal label", () => {
+  expect(core.linkScore("Our privacy policy", "/about")).toBeGreaterThan(0);
+});
+
+test("linkScore scores the href on hostname and final path segment, never the query", () => {
+  expect(
+    core.linkScore("Read more", "https://example.com/news/story?topic=privacy-policy&utm_campaign=terms"),
+  ).toBe(0);
+  expect(
+    core.linkScore("Read more", "https://example.com/legal/terms?topic=news&utm_source=feed"),
+  ).toBeGreaterThan(0);
+  expect(core.linkScore("Read more", "https://privacy.example.com/2026/11/18/story")).toBeGreaterThan(0);
+});
+
 test("linkScore scores French legal links", () => {
   expect(core.linkScore("Politique de confidentialité", "/politique")).toBeGreaterThan(0);
   expect(core.linkScore("Gestion des cookies", "/cookies")).toBeGreaterThan(0);
