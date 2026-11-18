@@ -1,0 +1,62 @@
+// Pure scoring helpers for the local detector. Loaded before detect.js as a
+// classic content script and imported for side effect by the unit tests; no
+// DOM, no network, no Chrome APIs. Sets globalThis.ScoutDetect.
+(function (global) {
+  'use strict';
+
+  var LINK_RE = /\b(terms?|tos|conditions?|privacy|eula|agreement|polic(?:y|ies)|legal|refund|cancel)\b/i;
+  var CONSENT_RE = /\b(i agree|i accept|accept|acknowledge|consent)\b/i;
+  var BY_CLICKING_RE = /by (?:clicking|using|continuing)[\s\S]{0,120}?you agree/i;
+
+  // > 0 only when the link's visible text or its href names a legal page.
+  // A visible text match is worth more than a URL match: the label is what
+  // the user was about to click.
+  function linkScore(text, href) {
+    var score = (LINK_RE.test(text || '') ? 3 : 0) + (LINK_RE.test(href || '') ? 2 : 0);
+    if (score === 0) return 0;
+    return score + (text && text.trim() ? 1 : 0);
+  }
+
+  // > 0 only when the checkbox itself or the text around it asks for consent.
+  // "By clicking X, you agree" counts as consent on its own and adds a bonus.
+  function checkboxScore(label, context) {
+    var ctxText = context || '';
+    var byClicking = BY_CLICKING_RE.test(ctxText);
+    var inLabel = CONSENT_RE.test(label || '');
+    var inContext = CONSENT_RE.test(ctxText) || byClicking;
+    if (!inLabel && !inContext) return 0;
+    var score = inLabel ? 5 : 4;
+    if (byClicking) score += 2;
+    return score;
+  }
+
+  var DENSE_MIN_CHARS = 800;
+  var DENSE_MIN_SENTENCES_PER_100 = 0.4;
+
+  // Dense legal prose: long, about legal topics, and made of real sentences
+  // (a 900-character menu has no periods and never qualifies).
+  function denseScore(text) {
+    if (!text || text.length <= DENSE_MIN_CHARS) return 0;
+    if (!LINK_RE.test(text)) return 0;
+    var sentences = (text.match(/[.!?]/g) || []).length;
+    if ((sentences * 100) / text.length < DENSE_MIN_SENTENCES_PER_100) return 0;
+    return 3;
+  }
+
+  // The iframe early-return gate: only scan a frame whose first bit of text
+  // mentions legal or consent topics at all.
+  function frameWorthScanning(headText) {
+    var text = String(headText || '');
+    return LINK_RE.test(text) || CONSENT_RE.test(text);
+  }
+
+  global.ScoutDetect = {
+    LINK_RE: LINK_RE,
+    CONSENT_RE: CONSENT_RE,
+    BY_CLICKING_RE: BY_CLICKING_RE,
+    linkScore: linkScore,
+    checkboxScore: checkboxScore,
+    denseScore: denseScore,
+    frameWorthScanning: frameWorthScanning,
+  };
+})(globalThis);

@@ -6,11 +6,60 @@
 // panel, which is the part that talks to the app.
 
 const CONTEXT_MENU_ID = "scan-selection";
+const ORIGINS_KEY = "scout-origins";
 
 // The text of the last scan, kept until the panel has taken it.
 let pendingText = null;
 
+// Same one-liner as in sidepanel.js: the service worker is a classic script
+// and cannot import the module that holds it.
+function scriptId(origin) {
+  return "scout-detect-" + origin.replace(/^[a-z]+:\/\//i, "").replace(/[^a-z0-9.-]+/gi, "-");
+}
+
+// Dynamic content-script registrations do not survive an extension reload or
+// update, so every startup the enabled origins are re-registered from storage.
+// Safe to run repeatedly: already-registered ids are skipped.
+async function restoreAutoDetect() {
+  let origins = [];
+  try {
+    const stored = await chrome.storage.sync.get({ [ORIGINS_KEY]: [] });
+    origins = stored[ORIGINS_KEY] || [];
+  } catch {
+    return;
+  }
+
+  let registered = [];
+  try {
+    registered = await chrome.scripting.getRegisteredContentScripts();
+  } catch {
+    return;
+  }
+  const have = new Set(registered.map((s) => s.id));
+
+  for (const origin of origins) {
+    if (have.has(scriptId(origin))) continue;
+    try {
+      await chrome.scripting.registerContentScripts([
+        {
+          id: scriptId(origin),
+          matches: [origin + "/*"],
+          js: ["detect-core.js", "detect.js"],
+          runAt: "document_idle",
+          allFrames: true,
+          persistAcrossSessions: true,
+        },
+      ]);
+    } catch {
+      // The origin's permission was revoked in settings: leave it off.
+    }
+  }
+}
+
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+
+chrome.runtime.onInstalled.addListener(restoreAutoDetect);
+chrome.runtime.onStartup.addListener(restoreAutoDetect);
 
 chrome.runtime.onInstalled.addListener(() => {
   // Removed first: a reloaded extension still has the old item.

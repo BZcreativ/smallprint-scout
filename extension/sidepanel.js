@@ -2,11 +2,19 @@
 
 import { findActiveTab } from "./active-tab.js";
 
-// The side panel is a shell: it holds the hosted app in an iframe and hands it
-// the text of the page. Nothing here talks to Firebase, and no text is read
-// until the user asks for it.
+// The side panel is a shell: it holds the hosted app in an iframe, hands it
+// the text of the page, and lists what the local detector (detect.js) found.
+// Nothing here talks to Firebase, and no text is read until the user asks.
 
 const APP_ORIGIN = "https://smallprint-scout.web.app";
+const ORIGINS_KEY = "scout-origins";
+
+const autoDetect = document.getElementById("auto-detect");
+const section = document.getElementById("candidates");
+const list = document.getElementById("candidate-list");
+
+let currentTab = null; // the tab this panel is looking at
+const candidatesByFrame = new Map(); // frameId -> candidate items of that frame
 
 // The selection when there is one, the whole page otherwise.
 function readText() {
@@ -33,20 +41,207 @@ async function scanTab(tabId) {
   postToApp(results && results[0] ? results[0].result : "");
 }
 
+// The http(s) origin of the active tab, or null (activeTab grants the URL,
+// so chrome:// pages and not-yet-granted tabs come back empty).
+function tabOrigin(tab) {
+  if (!tab || typeof tab.url !== "string") return null;
+  try {
+    const url = new URL(tab.url);
+    return /^https?:$/.test(url.protocol) ? url.origin : null;
+  } catch {
+    return null;
+  }
+}
+
+// Same one-liner as in background.js: this is a module, the service worker
+// is not, and one line is not worth a shared file.
+function scriptId(origin) {
+  return "scout-detect-" + origin.replace(/^[a-z]+:\/\//i, "").replace(/[^a-z0-9.-]+/gi, "-");
+}
+
+async function storedOrigins() {
+  try {
+    const stored = await chrome.storage.sync.get({ [ORIGINS_KEY]: [] });
+    return stored[ORIGINS_KEY] || [];
+  } catch {
+    return [];
+  }
+}
+
+// The checkbox follows the real permission state, never the click.
+async function refreshToggle() {
+  const origin = tabOrigin(currentTab);
+  autoDetect.disabled = !origin;
+  autoDetect.title = origin ? "" : "Open this panel on an http(s) page first";
+  autoDetect.checked = origin !== null && (await chrome.permissions.contains({ origins: [origin + "/*"] }));
+}
+
+async function enableAutoDetect(tab, origin) {
+  const granted = await chrome.permissions.request({ origins: [origin + "/*"] });
+  if (!granted) return;
+
+  try {
+    await chrome.scripting.registerContentScripts([
+      {
+        id: scriptId(origin),
+        matches: [origin + "/*"],
+        js: ["detect-core.js", "detect.js"],
+        runAt: "document_idle",
+        allFrames: true,
+        persistAcrossSessions: true,
+      },
+    ]);
+  } catch {
+    // Registered by an earlier enable; nothing to do.
+  }
+
+  // The registration only covers future navigations, so also inject into the
+  // page that is open right now.
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id, allFrames: true },
+      files: ["detect-core.js", "detect.js"],
+    });
+  } catch {
+    // Some pages refuse injection; the next navigation detects normally.
+  }
+
+  const origins = await storedOrigins();
+  if (!origins.includes(origin)) {
+    await chrome.storage.sync.set({ [ORIGINS_KEY]: [...origins, origin] });
+  }
+}
+
+async function disableAutoDetect(tab, origin) {
+  try {
+    await chrome.scripting.unregisterContentScripts({ ids: [scriptId(origin)] });
+  } catch {
+    // Nothing registered under this id.
+  }
+
+  try {
+    await chrome.permissions.remove({ origins: [origin + "/*"] });
+  } catch {
+    // Already gone.
+  }
+
+  await chrome.storage.sync.set({
+    [ORIGINS_KEY]: (await storedOrigins()).filter((o) => o !== origin),
+  });
+
+  // The detector keeps running in tabs that are open: tell it to pack up.
+  try {
+    await chrome.tabs.sendMessage(tab.id, { type: "SCOUT_DISABLE" });
+  } catch {
+    // No detector in this tab right now.
+  }
+}
+
+autoDetect.addEventListener("change", async () => {
+  const tab = currentTab;
+  const origin = tabOrigin(tab);
+  if (!tab || !origin) {
+    await refreshToggle();
+    return;
+  }
+  try {
+    if (autoDetect.checked) {
+      await enableAutoDetect(tab, origin);
+    } else {
+      await disableAutoDetect(tab, origin);
+    }
+  } finally {
+    await refreshToggle();
+  }
+});
+
 document.getElementById("scan-page").addEventListener("click", () => {
   findActiveTab()
-    .then((tabId) => (tabId === null ? null : scanTab(tabId)))
+    .then((tab) => (tab === null ? null : scanTab(tab.id)))
     .catch(() => {
       // The page may refuse the injection (a chrome:// page, or a tab the
       // extension has no permission for).
     });
 });
 
-// The background sends the text it read for the context menu.
-chrome.runtime.onMessage.addListener((message) => {
-  if (message && message.type === "SMALLPRINT_TEXT" && typeof message.text === "string") {
-    postToApp(message.text);
+function kindName(kind) {
+  if (kind === "checkbox") return "consent";
+  if (kind === "dense") return "legal text";
+  return "link";
+}
+
+function renderCandidates() {
+  const items = [];
+  for (const frameItems of candidatesByFrame.values()) items.push(...frameItems);
+
+  section.hidden = items.length === 0;
+  list.replaceChildren();
+
+  for (const item of items) {
+    const row = document.createElement("li");
+
+    const label = document.createElement("span");
+    label.className = "label";
+    label.textContent = item.label || item.kind;
+    row.append(label);
+
+    const kind = document.createElement("span");
+    kind.className = "kind";
+    kind.textContent = item.dialog ? kindName(item.kind) + " · dialog" : kindName(item.kind);
+    row.append(kind);
+
+    const focus = document.createElement("button");
+    focus.type = "button";
+    focus.textContent = "Focus";
+    focus.addEventListener("click", () => {
+      if (!currentTab) return;
+      chrome.tabs.sendMessage(currentTab.id, { type: "SCOUT_FOCUS", id: item.id }).catch(() => {
+        // The page navigated away; the list refreshes on the next scan.
+      });
+    });
+    row.append(focus);
+
+    const scan = document.createElement("button");
+    scan.type = "button";
+    scan.textContent = "Scan";
+    scan.addEventListener("click", () => postToApp(String(item.text || "")));
+    row.append(scan);
+
+    list.append(row);
   }
+}
+
+// The background sends the text it read for the context menu, and detect.js
+// in the page sends the candidates it found (one message per frame).
+chrome.runtime.onMessage.addListener((message, sender) => {
+  if (!message) return;
+
+  if (message.type === "SMALLPRINT_TEXT" && typeof message.text === "string") {
+    postToApp(message.text);
+    return;
+  }
+
+  if (
+    message.type === "SMALLPRINT_CANDIDATES" &&
+    Array.isArray(message.items) &&
+    sender.tab &&
+    sender.tab.id === (currentTab && currentTab.id)
+  ) {
+    candidatesByFrame.set(
+      sender.frameId,
+      message.items.filter((item) => item && typeof item.id === "string" && typeof item.kind === "string"),
+    );
+    renderCandidates();
+  }
+});
+
+// The panel stays open across tab switches: follow the active tab.
+chrome.tabs.onActivated.addListener(async ({ tabId }) => {
+  if (currentTab && currentTab.id === tabId) return;
+  currentTab = await findActiveTab();
+  candidatesByFrame.clear();
+  renderCandidates();
+  await refreshToggle();
 });
 
 // The background may have read the text before this panel was ready, so the
@@ -64,3 +259,8 @@ chrome.runtime
   .catch(() => {
     // No background to answer: the user can still press "Scan this page".
   });
+
+(async () => {
+  currentTab = await findActiveTab();
+  await refreshToggle();
+})();

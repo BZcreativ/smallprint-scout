@@ -41,13 +41,73 @@
         width: 100%;
         border: 0;
       }
+
+      .toggle {
+        font-size: 12px;
+        white-space: nowrap;
+      }
+
+      #candidates {
+        max-height: 40%;
+        overflow-y: auto;
+        padding: 6px 10px;
+        border-bottom: 1px solid #d9dde3;
+      }
+
+      #candidates h2 {
+        margin: 0 0 4px;
+        font-size: 12px;
+      }
+
+      #candidate-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+
+      #candidate-list li {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 3px 0;
+      }
+
+      #candidate-list .label {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 12px;
+      }
+
+      #candidate-list .kind {
+        font-size: 10px;
+        padding: 1px 4px;
+        border: 1px solid #d9dde3;
+        border-radius: 4px;
+      }
+
+      #candidate-list button {
+        padding: 2px 6px;
+        font-size: 12px;
+      }
     </style>
   </head>
   <body>
     <header>
       <h1>SmallPrint Scout</h1>
+      <label class="toggle">
+        <input type="checkbox" id="auto-detect" />
+        Auto-detect on this site
+      </label>
       <button id="scan-page" type="button">Scan this page</button>
     </header>
+
+    <section id="candidates" hidden aria-label="Agreement candidates found on this page">
+      <h2>Found on this page</h2>
+      <ul id="candidate-list"></ul>
+    </section>
     <!-- The app runs in the hosted page: Firebase, App Check and Gemini Nano
          all live there, never in the extension. -->
     <iframe
