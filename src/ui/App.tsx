@@ -239,7 +239,7 @@ async function runScan(text: string, route: ScanRoute) {
                 );
               } catch (cloudErr) {
                 const msg = cloudErr instanceof Error ? cloudErr.message : "";
-                if (/503|429|quota|deadline expired|unavailable|timeout|abort/i.test(msg)) {
+                if (/500|502|503|504|429|quota|deadline expired|unavailable|high demand|overloaded|internal|timeout|abort/i.test(msg)) {
                   return await timed("cloudTriageFallback", () =>
                     models.cloudTriageFallback.generateContent(prompt, { timeout: CLOUD_TIMEOUT_MS }),
                   );
