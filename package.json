@@ -9,6 +9,7 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "test": "vitest run",
+    "zip:extension": "node scripts/zip-extension.mjs",
     "test:rules": "npx -y firebase-tools@latest emulators:exec --only firestore --project demo-smallprint-scout \"cross-env RULES_TEST=1 vitest run tests/rules\""
   },
   "dependencies": {

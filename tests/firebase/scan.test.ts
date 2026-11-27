@@ -202,3 +202,33 @@ test("runLongScan reports section progress sequentially", async () => {
     [2, 2],
   ]);
 });
+
+
+test("runLongScan scans high-risk chunks first, verbatim, with intact progress", async () => {
+  const riskyQuote = "All prepaid annual fees are non-refundable and cannot be refunded";
+  // Filler half first in document order, risky half second.
+  const text = `${"y".repeat(4000)}\n\n${riskyQuote}. ${"z".repeat(4000)}`;
+
+  const seen: string[] = [];
+  const progress: [number, number][] = [];
+  const gen = vi.fn(async (prompt: string) => {
+    seen.push(prompt);
+    return {
+      response: { text: () => triageJson(prompt.includes(riskyQuote) ? riskyQuote : "x"), inferenceSource: "on_device" },
+    };
+  });
+
+  await runLongScan(text, gen, gen, (current, total) => progress.push([current, total]));
+
+  expect(gen).toHaveBeenCalledTimes(2);
+  // The risky chunk is evaluated first...
+  expect(seen[0]).toContain(riskyQuote);
+  // ...as a verbatim slice of the original text.
+  expect(text).toContain(riskyQuote);
+  expect(seen[0]).toContain(`${riskyQuote}. `);
+  // Progress is still reported sequentially over the same total.
+  expect(progress).toEqual([
+    [1, 2],
+    [2, 2],
+  ]);
+});

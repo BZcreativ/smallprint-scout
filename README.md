@@ -58,6 +58,10 @@ Private scans need Chrome's built-in model. On a profile without it, the app say
 5. Tests: `npm test` for the logic suite, and `npm run test:rules` for the Firestore security rules on the local emulator (needs Java 21 or newer).
 6. Deploy: `npm run build && npx -y firebase-tools@latest deploy --only hosting,firestore:rules --project smallprint-scout`.
 
+## Chrome extension
+
+The side-panel extension lives in [`extension/`](extension); load it from `chrome://extensions` (Developer mode → Load unpacked). To package it for Devpost or the Chrome Web Store, run `npm run zip:extension`, which writes `smallprint-scout-extension-v<version>.zip` at the repo root with `manifest.json` at the zip top level.
+
 ## Testing instructions for judges
 
 1. **Hosted app:** open <https://smallprint-scout.web.app> in Chrome desktop 139 or newer and sign in with Google from the header.

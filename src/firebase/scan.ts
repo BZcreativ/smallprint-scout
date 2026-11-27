@@ -1,6 +1,6 @@
 import { parseTriage, ScanParseError } from "../domain/parse-result";
 import { MAX_FINDINGS, normalizeForMatch, verifyQuotes } from "../domain/verify-quotes";
-import { chunkText, SINGLE_PASS_MAX } from "../domain/input";
+import { chunkText, prioritizeChunks, SINGLE_PASS_MAX } from "../domain/input";
 import type { InferenceRoute, TriageResult } from "../domain/types";
 
 // The first-pass triage scan.
@@ -155,7 +155,9 @@ export async function runLongScan(
   retryGenerate: GenerateFn = generate,
   onProgress?: (current: number, total: number) => void,
 ): Promise<ScanEnvelope> {
-  const chunks = chunkText(text, SINGLE_PASS_MAX);
+  // Scan high-risk sections first on long on-device policies: chunks stay
+  // verbatim slices, only evaluated in stable risk-signal order.
+  const chunks = prioritizeChunks(chunkText(text, SINGLE_PASS_MAX));
   const started = performance.now();
 
   const envelopes: ScanEnvelope[] = [];
