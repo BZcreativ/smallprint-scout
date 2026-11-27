@@ -200,10 +200,30 @@ function kindName(kind) {
   return "Terms link";
 }
 
-// Scans a candidate. A terms link with an http(s) href is fetched and its
-// document's text goes to the app; anything else (or a fetch that is denied,
-// fails, or yields too little) falls back to the text captured on the page,
-// which for a dialog candidate is the whole consent notice.
+const MAX_PDF_BYTES = 15 * 1024 * 1024;
+const PDF_MAGIC = [0x25, 0x50, 0x44, 0x46, 0x2d];
+
+function isPdfHeader(buffer) {
+  if (!buffer || buffer.byteLength < PDF_MAGIC.length) return false;
+  const view = new Uint8Array(buffer, 0, PDF_MAGIC.length);
+  for (let i = 0; i < PDF_MAGIC.length; i++) {
+    if (view[i] !== PDF_MAGIC[i]) return false;
+  }
+  return true;
+}
+
+// Sends a fetched PDF buffer to the hosted app using transferable memory so
+// pdfjs-dist extracts readable text 100% locally in the browser.
+function postPdfToApp(buffer, filename) {
+  const frame = document.getElementById("app-frame");
+  if (!frame || !frame.contentWindow) return;
+  frame.contentWindow.postMessage({ type: "SMALLPRINT_PDF", bytes: buffer, filename }, APP_ORIGIN, [buffer]);
+}
+
+// Scans a candidate. A terms link with an http(s) href is fetched (handling
+// HTML, plain text, and PDF policies safely); anything else (or a fetch that
+// is denied, fails, or yields too little) falls back to the text captured on
+// the page, which for a dialog candidate is the whole consent notice.
 async function scanItem(item, button) {
   const fallback = String(item.text || "");
   let origin = null;
@@ -223,14 +243,40 @@ async function scanItem(item, button) {
     if (granted) {
       button.textContent = "Loading...";
       let text = "";
+      let handledBinaryNotice = null;
       try {
-        const html = await (await fetch(item.href, { credentials: "include" })).text();
-        const doc = new DOMParser().parseFromString(html, "text/html");
-        if (doc.body) {
-          doc.body.querySelectorAll("script, style, noscript, svg, nav, header, footer").forEach((el) => el.remove());
-          // 120000 is the app's input cap (MAX_LENGTH in src/domain/input.ts);
-          // the app splits longer text into section scans itself.
-          text = (doc.body.textContent || "").replace(/\s+/g, " ").trim().slice(0, 120000);
+        const res = await fetch(item.href, { credentials: "include" });
+        if (res.ok) {
+          const ct = (res.headers.get("content-type") || "").toLowerCase();
+          const buf = await res.arrayBuffer();
+
+          if (ct.includes("application/pdf") || isPdfHeader(buf)) {
+            button.textContent = "Scan";
+            if (buf.byteLength > MAX_PDF_BYTES) {
+              handledBinaryNotice = "That PDF is larger than 15 MB, so the text shown on this page was scanned instead.";
+            } else {
+              hint.textContent = "Loaded PDF policy — extracting text locally…";
+              postPdfToApp(buf, item.label || "policy.pdf");
+              return;
+            }
+          } else if (ct && !/text\/|html|xml|xhtml/.test(ct)) {
+            handledBinaryNotice = "The linked file isn't readable text or PDF, so the text shown on this page was scanned instead.";
+          } else {
+            const raw = new TextDecoder("utf-8").decode(buf);
+            if (!raw.trimStart().startsWith("%PDF-")) {
+              if (ct.includes("text/plain")) {
+                text = raw.replace(/\s+/g, " ").trim().slice(0, 120000);
+              } else {
+                const doc = new DOMParser().parseFromString(raw, "text/html");
+                if (doc.body) {
+                  doc.body.querySelectorAll("script, style, noscript, svg, nav, header, footer").forEach((el) => el.remove());
+                  // 120000 is the app's input cap (MAX_LENGTH in src/domain/input.ts);
+                  // the app splits longer text into section scans itself.
+                  text = (doc.body.textContent || "").replace(/\s+/g, " ").trim().slice(0, 120000);
+                }
+              }
+            }
+          }
         }
       } catch {
         // Offline, blocked, or a 404: fall back below.
@@ -242,7 +288,8 @@ async function scanItem(item, button) {
         postToApp(text);
         return;
       }
-      hint.textContent = "Could not read the linked page, so the text shown on this page was scanned instead.";
+      hint.textContent =
+        handledBinaryNotice || "Could not read the linked page, so the text shown on this page was scanned instead.";
     } else {
       hint.textContent = "Permission to read the linked page was not granted, so the text shown on this page was scanned instead.";
     }

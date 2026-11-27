@@ -10,7 +10,7 @@ import { CLOUD_TIMEOUT_MS, models, slimResponseConstraint, timed, withCloudFallb
 import { getDeviceStatus, initDeviceModel, type DeviceStatus } from "../firebase/device";
 import { runCloudLegalResearch, type CloudResearch } from "../firebase/research";
 import { JURISDICTION_LABELS, type JurisdictionId } from "../domain/types";
-import { acceptsMessage } from "../domain/extension-message";
+import { acceptsMessage, acceptsPdfMessage } from "../domain/extension-message";
 import { InputScreen } from "./InputScreen";
 import { ModelStatus } from "./ModelStatus";
 
@@ -42,6 +42,7 @@ export default function App() {
   const [inputText, setInputText] = useState("");
   const [busy, setBusy] = useState(false);
   const [scanProgress, setScanProgress] = useState<string | null>(null);
+  const [pdfNotice, setPdfNotice] = useState<string | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
   const [canRetry, setCanRetry] = useState(false);
   const [lastAttempt, setLastAttempt] = useState<{ text: string; route: ScanRoute } | null>(null);
@@ -74,23 +75,52 @@ export default function App() {
     };
   }, []);
 
-  // The Chrome extension pushes the text of a page (or of a selection) into
-  // the app. Only a message from another extension is taken, and it only
+  const handlePdfBytes = useCallback(async (bytes: Uint8Array, label?: string) => {
+    setBusy(true);
+    setScanProgress("Extracting text from PDF locally…");
+    setScanError(null);
+    setPdfNotice(null);
+    setCanRetry(false);
+    try {
+      const { extractPdfText } = await import("../domain/pdf");
+      const { text, pageCount } = await extractPdfText(bytes);
+      setInputText(text);
+      setScreen({ name: "input" });
+      setPdfNotice(
+        `Extracted ${text.length.toLocaleString("en-GB")} characters from ${pageCount}-page PDF${label ? ` (${label})` : ""} on this device.`,
+      );
+    } catch (e) {
+      setScanError(e instanceof Error ? e.message : "Could not read that PDF.");
+    } finally {
+      setBusy(false);
+      setScanProgress(null);
+    }
+  }, []);
+
+  // The Chrome extension pushes the text of a page (or a fetched PDF buffer)
+  // into the app. Only a message from another extension is taken, and it only
   // loads the text: the user still presses the scan button.
   useEffect(() => {
     function onMessage(event: MessageEvent) {
       const text = acceptsMessage({ origin: event.origin, data: event.data });
-      if (text === null) return;
+      if (text !== null) {
+        setInputText(text);
+        setPdfNotice(null);
+        setScanError(null);
+        setCanRetry(false);
+        setScreen({ name: "input" });
+        return;
+      }
 
-      setInputText(text);
-      setScanError(null);
-      setCanRetry(false);
-      setScreen({ name: "input" });
+      const pdf = acceptsPdfMessage({ origin: event.origin, data: event.data });
+      if (pdf) {
+        void handlePdfBytes(pdf.bytes, pdf.filename);
+      }
     }
 
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, []);
+  }, [handlePdfBytes]);
 
   function handleEnableDevice() {
     setError(null);
@@ -309,7 +339,10 @@ async function runScan(text: string, route: ScanRoute) {
           <InputScreen
             deviceStatus={deviceStatus}
             text={inputText}
-            onTextChange={setInputText}
+            onTextChange={(nextText) => {
+              setInputText(nextText);
+              if (nextText !== inputText) setPdfNotice(null);
+            }}
             onPrivateScan={(text) => void runScan(text, "local")}
             onCloudScan={(text) => {
               setScanError(null);
@@ -318,6 +351,8 @@ async function runScan(text: string, route: ScanRoute) {
             }}
             busy={busy}
             progressLabel={scanProgress}
+            pdfNotice={pdfNotice}
+            onUploadPdf={(file) => void file.arrayBuffer().then((buf) => handlePdfBytes(new Uint8Array(buf), file.name))}
           />
         );
 

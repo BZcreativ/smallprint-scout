@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { MAX_LENGTH, SINGLE_PASS_MAX, chunkText, validateInput } from "../domain/input";
 import type { DeviceStatus } from "../firebase/device";
 
@@ -22,6 +22,8 @@ export interface InputScreenProps {
   onCloudScan: (text: string) => void;
   busy?: boolean;
   progressLabel?: string | null;
+  pdfNotice?: string | null;
+  onUploadPdf?: (file: File) => void;
 }
 
 export function InputScreen({
@@ -32,7 +34,10 @@ export function InputScreen({
   onCloudScan,
   busy = false,
   progressLabel = null,
+  pdfNotice = null,
+  onUploadPdf,
 }: InputScreenProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [sampleError, setSampleError] = useState<string | null>(null);
   const [loadingSample, setLoadingSample] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
@@ -90,7 +95,35 @@ export function InputScreen({
             {loadingSample === sample.id ? "Loading…" : sample.label}
           </button>
         ))}
+        {onUploadPdf && (
+          <>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="application/pdf,.pdf"
+              style={{ display: "none" }}
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (file) {
+                  setFormError(null);
+                  setSampleError(null);
+                  onUploadPdf(file);
+                }
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={busy || loadingSample !== null}
+            >
+              Upload PDF
+            </button>
+          </>
+        )}
       </div>
+
+      {pdfNotice && <p className="hint">{pdfNotice}</p>}
 
       <label className="field" htmlFor="agreement-text">
         Agreement text

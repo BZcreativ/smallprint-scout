@@ -11,6 +11,15 @@ test("accepts and trims valid input", () => expect(validateInput("  " + "a".repe
 test("accepts a document longer than one prompt (it is chunked later)", () =>
   expect(validateInput("a".repeat(6001)).ok).toBe(true));
 
+test("rejects raw PDF and binary control-character streams", () => {
+  const pdf = validateInput("%PDF-1.3 % 3 0 obj << /Filter /FlateDecode >> stream x\\Ms#9rW1 " + "x".repeat(80));
+  expect(pdf.ok).toBe(false);
+  if (!pdf.ok) expect(pdf.message).toContain("raw PDF");
+
+  const binary = validateInput(`Valid prefix\u0000\u0001\u0002\u0003\u0004\u0005 ${"x".repeat(80)}`);
+  expect(binary.ok).toBe(false);
+});
+
 test("chunkText keeps short text whole", () => {
   const text = "a".repeat(100);
   expect(chunkText(text, 6000)).toEqual([text]);

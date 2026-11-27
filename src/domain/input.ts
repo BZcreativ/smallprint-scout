@@ -14,8 +14,29 @@ export const SINGLE_PASS_MAX = 6_000;
 
 export type ValidatedInput = { ok: true; text: string } | { ok: false; message: string };
 
+function looksLikeBinary(text: string): boolean {
+  if (text.startsWith("%PDF-")) return true;
+  const sample = text.slice(0, 2000);
+  let controlCount = 0;
+  for (let i = 0; i < sample.length; i++) {
+    const code = sample.charCodeAt(i);
+    if ((code <= 0x08) || (code >= 0x0e && code <= 0x1f) || code === 0xfffd) {
+      controlCount++;
+      if (controlCount >= 5) return true;
+    }
+  }
+  return false;
+}
+
 export function validateInput(text: string): ValidatedInput {
   const trimmed = text.trim();
+
+  if (looksLikeBinary(trimmed)) {
+    return {
+      ok: false,
+      message: "That looks like a raw PDF or binary file rather than readable text. Upload the PDF or paste plain text instead.",
+    };
+  }
 
   if (trimmed.length < MIN_LENGTH) {
     return {
