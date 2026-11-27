@@ -17,6 +17,11 @@ Rules:
 3. Return at most 3 high-priority findings sorted by practical impact.
 4. Keep summary, plainEnglish, whyItMatters, and nextStep concise (under 15 words each).
 5. Return ONLY the JSON object with no text before or after it.
+6. Calibrate risk & severity for consumers and auditors:
+   - HIGH (overallRisk or severity): clauses that strip rights, lock in money, or enable invasive/hard-to-refuse data practices (auto-renewal lock-ins, unilateral fee hikes, onerous cancellation or no-refund traps, arbitration/class-action waivers, AI training or perpetual content/biometric licences, broad third-party/ad data sharing, overriding user objections via legitimate interest, or cross-device tracking without clear opt-out).
+   - MEDIUM / WATCH: borderline or asymmetric terms worth auditing (cross-border transfers outside UK/EU, broad discretion to change terms, vague retention periods, bundled consent).
+   - LOW / INFO: transparent, consumer-friendly terms with no traps, no data sales, and no AI training.
+7. Keep 'unknowns' relevant to the document type (e.g., retention periods or named third-party recipients for privacy notices; pricing/renewal/cancellation details for subscription terms).
 `.trim();
 
 export type GenerateFn = (prompt: string) => Promise<{ response: { text(): string; inferenceSource?: string } }>;

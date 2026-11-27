@@ -68,12 +68,28 @@ textarea { resize: vertical; }
 .risk.risk-low { color: var(--ok); }
 .risk.risk-medium { color: var(--warn); }
 .risk.risk-high { color: var(--error); }
+.risk-banner { border: 1px solid var(--line); border-left: 4px solid var(--risk-color, var(--accent)); border-radius: 8px; padding: 10px 12px; margin: 12px 0; background: color-mix(in srgb, var(--risk-color, var(--accent)) 10%, var(--panel)); }
+.risk-banner.risk-low { --risk-color: var(--ok); }
+.risk-banner.risk-medium { --risk-color: var(--warn); }
+.risk-banner.risk-high { --risk-color: var(--error); }
+.risk-banner-top { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+.risk-title { font-weight: 700; font-size: 1rem; color: var(--risk-color); }
+.risk-meter { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 8px 0 6px; }
+.risk-meter .seg { height: 8px; border-radius: 999px; background: var(--line); }
+.risk-meter .seg.on { background: var(--risk-color); }
+.risk-meta { margin: 0; }
 .summary { font-size: 1.05rem; }
 
 .card { border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 12px 0; background: var(--panel); }
+.card.sev-high { border-left: 4px solid var(--error); }
+.card.sev-watch { border-left: 4px solid var(--warn); }
+.card.sev-info { border-left: 4px solid var(--accent); }
 .card p { margin: 6px 0; }
 .card .why { color: var(--muted); }
 .chip { display: inline-block; border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; font-size: 0.8rem; color: var(--muted); }
+.chip.sev-high { color: var(--error); border-color: var(--error); font-weight: 600; }
+.chip.sev-watch { color: var(--warn); border-color: var(--warn); font-weight: 600; }
+.chip.sev-info { color: var(--accent); border-color: var(--accent); font-weight: 600; }
 .chip.unverified { color: var(--warn); border-color: var(--warn); }
 blockquote { margin: 8px 0; padding: 6px 12px; border-left: 3px solid var(--accent); background: var(--bg); }
 .quote { font-style: italic; }

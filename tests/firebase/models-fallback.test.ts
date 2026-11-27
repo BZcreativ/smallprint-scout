@@ -39,13 +39,16 @@ test("withCloudFallback returns primary result when primary succeeds", async () 
   expect(fallback).not.toHaveBeenCalled();
 });
 
-test("withCloudFallback calls fallback on transient errors", async () => {
+test("withCloudFallback calls fallback on transient errors and cools down primary", async () => {
   vi.spyOn(console, "warn").mockImplementation(() => {});
-  const primary = vi.fn().mockRejectedValue(new Error("[500 ] high demand"));
+  const primary = vi.fn().mockRejectedValue(new Error("Timeout has expired."));
   const fallback = vi.fn().mockResolvedValue("fallback-ok");
 
   await expect(withCloudFallback("grounded", primary, fallback)).resolves.toBe("fallback-ok");
-  expect(fallback).toHaveBeenCalledTimes(1);
+  await expect(withCloudFallback("grounded", primary, fallback)).resolves.toBe("fallback-ok");
+
+  expect(primary).toHaveBeenCalledTimes(1);
+  expect(fallback).toHaveBeenCalledTimes(2);
 });
 
 test("withCloudFallback short-circuits primary after daily quota 429", async () => {

@@ -6,7 +6,14 @@ import { DOCUMENT_TYPES, toScanSummary, type ScanSummary } from "../domain/scan-
 import { ScanParseError } from "../domain/parse-result";
 import { quotaDetail, rateLimitHint, runFirstPassScan, runLongScan, type ScanEnvelope } from "../firebase/scan";
 import { SINGLE_PASS_MAX } from "../domain/input";
-import { CLOUD_TIMEOUT_MS, models, slimResponseConstraint, timed, withCloudFallback } from "../firebase/models";
+import {
+  CLOUD_TIMEOUT_MS,
+  PRIMARY_CLOUD_TIMEOUT_MS,
+  models,
+  slimResponseConstraint,
+  timed,
+  withCloudFallback,
+} from "../firebase/models";
 import { getDeviceStatus, initDeviceModel, type DeviceStatus } from "../firebase/device";
 import { runCloudLegalResearch, type CloudResearch } from "../firebase/research";
 import { JURISDICTION_LABELS, type JurisdictionId } from "../domain/types";
@@ -250,7 +257,7 @@ async function runScan(text: string, route: ScanRoute) {
               }
               return await withCloudFallback(
                 "cloudTriage",
-                () => models.cloudTriage.generateContent(prompt, { timeout: CLOUD_TIMEOUT_MS }),
+                () => models.cloudTriage.generateContent(prompt, { timeout: PRIMARY_CLOUD_TIMEOUT_MS }),
                 () => models.cloudTriageFallback.generateContent(prompt, { timeout: CLOUD_TIMEOUT_MS }),
               );
             };
@@ -309,7 +316,7 @@ async function runScan(text: string, route: ScanRoute) {
       const research = await runCloudLegalResearch(redactedText, jurisdiction, (prompt) =>
         withCloudFallback(
           "grounded",
-          () => models.grounded.generateContent(prompt, { timeout: CLOUD_TIMEOUT_MS }),
+          () => models.grounded.generateContent(prompt, { timeout: PRIMARY_CLOUD_TIMEOUT_MS }),
           () => models.groundedFallback.generateContent(prompt, { timeout: CLOUD_TIMEOUT_MS }),
         ),
       );

@@ -14,6 +14,12 @@ const ROUTE_BADGES = {
 
 const UNVERIFIED_CHIP = "Unverified quote — check the original";
 
+const RISK_META = {
+  LOW: { level: 1, label: "Low risk", title: "Low risk — no major red flags spotted" },
+  MEDIUM: { level: 2, label: "Medium risk", title: "Medium risk — borderline clauses to check" },
+  HIGH: { level: 3, label: "High risk", title: "High risk — review carefully before accepting" },
+} as const;
+
 export interface ResultsScreenProps {
   source: string;
   scan: ScanEnvelope;
@@ -25,27 +31,43 @@ export interface ResultsScreenProps {
 export function ResultsScreen({ source, scan, onDraft, onResearch, onReset }: ResultsScreenProps) {
   const { data } = scan;
   const findings = data.findings.slice(0, 3);
+  const riskMeta = RISK_META[data.overallRisk];
 
   return (
     <section className="results">
-      <div className="results-head">
-        <span className={`badge route-${scan.route.toLowerCase()}`}>{ROUTE_BADGES[scan.route]}</span>
-        <span className={`risk risk-${data.overallRisk.toLowerCase()}`}>{data.overallRisk} risk</span>
-        <span className="hint">{scan.durationMs.toLocaleString("en-GB")} ms</span>
+      <div className={`risk-banner risk-${data.overallRisk.toLowerCase()}`}>
+        <div className="risk-banner-top">
+          <span className="risk-title">{riskMeta.title}</span>
+          <span className={`badge route-${scan.route.toLowerCase()}`}>{ROUTE_BADGES[scan.route]}</span>
+        </div>
+        <div
+          className="risk-meter"
+          role="meter"
+          aria-label="Overall criticality"
+          aria-valuemin={1}
+          aria-valuemax={3}
+          aria-valuenow={riskMeta.level}
+          aria-valuetext={riskMeta.label}
+        >
+          <span className={riskMeta.level >= 1 ? "seg on" : "seg"} />
+          <span className={riskMeta.level >= 2 ? "seg on" : "seg"} />
+          <span className={riskMeta.level >= 3 ? "seg on" : "seg"} />
+        </div>
+        <p className="hint risk-meta">
+          {findings.length} {findings.length === 1 ? "finding" : "findings"} · {source.length.toLocaleString("en-GB")} characters scanned · {scan.durationMs.toLocaleString("en-GB")} ms
+        </p>
       </div>
 
       <p className="summary">{data.summary}</p>
-      <p className="hint">
-        Scanned {source.length.toLocaleString("en-GB")} characters.
-      </p>
 
       {findings.length > 0 && (
         <>
           <h2>What to look at</h2>
           {findings.map((finding, index) => (
-            <article className="card" key={`${finding.category}-${index}`}>
+            <article className={`card sev-${finding.severity.toLowerCase()}`} key={`${finding.category}-${index}`}>
               <h3>
-                {finding.category} <span className="chip">{finding.severity}</span>
+                {finding.category}{" "}
+                <span className={`chip sev-${finding.severity.toLowerCase()}`}>{finding.severity}</span>
               </h3>
               <p>{finding.plainEnglish}</p>
               {finding.whyItMatters && <p className="why">{finding.whyItMatters}</p>}

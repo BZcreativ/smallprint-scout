@@ -8,7 +8,7 @@ import {
 import { firebaseApp } from "./app";
 import { triageSchema } from "../domain/schema";
 import { DEFAULT_CLOUD_MODEL, getCloudModelName, initRemoteConfig } from "./remote-config";
-export { CLOUD_TIMEOUT_MS, isTransientCloudError, timed, withCloudFallback } from "./cloud-fallback";
+export { CLOUD_TIMEOUT_MS, PRIMARY_CLOUD_TIMEOUT_MS, isTransientCloudError, timed, withCloudFallback } from "./cloud-fallback";
 
 // The five models the app uses, one per inference path (docs/spec.md §4.3).
 //
