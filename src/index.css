@@ -94,6 +94,12 @@ textarea { resize: vertical; }
 blockquote { margin: 8px 0; padding: 6px 12px; border-left: 3px solid var(--accent); background: var(--bg); }
 .quote { font-style: italic; }
 
+.context-toggle { font-size: 0.85rem; padding: 2px 10px; margin: 4px 0 0; }
+.source-context { margin: 6px 0 0; padding: 6px 10px; border-left: 3px solid var(--line); border-radius: 0 6px 6px 0; background: var(--panel); color: var(--muted); font-size: 0.85rem; white-space: pre-wrap; overflow-wrap: break-word; }
+.source-context mark { background: color-mix(in srgb, var(--warn) 35%, transparent); color: inherit; border-radius: 2px; padding: 0 1px; }
+.copy-status { font-size: 0.9rem; color: var(--ok); align-self: center; }
+.copy-status.failed { color: var(--error); }
+
 .dates, .unknowns { padding-left: 20px; }
 .dates li, .unknowns li { margin: 8px 0; }
 

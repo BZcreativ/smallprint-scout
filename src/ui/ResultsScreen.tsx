@@ -1,4 +1,7 @@
+import { useState } from "react";
 import type { ScanEnvelope } from "../firebase/scan";
+import { findQuoteRange } from "../domain/verify-quotes";
+import { formatAuditReport } from "../domain/audit-report";
 
 // The result of one scan.
 //
@@ -28,10 +31,51 @@ export interface ResultsScreenProps {
   onReset: () => void;
 }
 
+const CONTEXT_CHARS = 220;
+
+function SourceContext({ source, quote }: { source: string; quote: string }) {
+  const [open, setOpen] = useState(false);
+  const range = open ? findQuoteRange(source, quote) : null;
+
+  return (
+    <>
+      <button
+        className="context-toggle"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+      >
+        {open ? "Hide context" : "Show in text"}
+      </button>
+      {open &&
+        (range ? (
+          <p className="source-context">
+            {range.start > CONTEXT_CHARS ? "…" : ""}
+            {source.slice(Math.max(0, range.start - CONTEXT_CHARS), range.start)}
+            <mark>{source.slice(range.start, range.end)}</mark>
+            {source.slice(range.end, range.end + CONTEXT_CHARS)}
+            {range.end + CONTEXT_CHARS < source.length ? "…" : ""}
+          </p>
+        ) : (
+          <p className="source-context">Quote not found in the scanned text.</p>
+        ))}
+    </>
+  );
+}
+
 export function ResultsScreen({ source, scan, onDraft, onResearch, onReset }: ResultsScreenProps) {
   const { data } = scan;
   const findings = data.findings.slice(0, 3);
   const riskMeta = RISK_META[data.overallRisk];
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+
+  async function copyReport() {
+    try {
+      await navigator.clipboard.writeText(formatAuditReport(scan, source.length));
+      setCopyState("copied");
+    } catch {
+      setCopyState("failed");
+    }
+  }
 
   return (
     <section className="results">
@@ -77,7 +121,10 @@ export function ResultsScreen({ source, scan, onDraft, onResearch, onReset }: Re
                 </p>
               )}
               {finding.quoteVerified ? (
-                <blockquote>{finding.quote}</blockquote>
+                <>
+                  <blockquote>{finding.quote}</blockquote>
+                  <SourceContext source={source} quote={finding.quote} />
+                </>
               ) : (
                 <>
                   <p className="quote">{finding.quote}</p>
@@ -97,7 +144,10 @@ export function ResultsScreen({ source, scan, onDraft, onResearch, onReset }: Re
               <li key={`${keyDate.event}-${index}`}>
                 <strong>{keyDate.event}</strong> — {keyDate.dateOrTrigger}
                 {keyDate.sourceVerified ? (
-                  <blockquote>{keyDate.sourceQuote}</blockquote>
+                  <>
+                    <blockquote>{keyDate.sourceQuote}</blockquote>
+                    <SourceContext source={source} quote={keyDate.sourceQuote} />
+                  </>
                 ) : (
                   <>
                     <p className="quote">{keyDate.sourceQuote}</p>
@@ -122,6 +172,12 @@ export function ResultsScreen({ source, scan, onDraft, onResearch, onReset }: Re
       )}
 
       <div className="actions">
+        <button onClick={copyReport}>Copy audit report</button>
+        {copyState !== "idle" && (
+          <span className={`copy-status${copyState === "failed" ? " failed" : ""}`}>
+            {copyState === "copied" ? "Audit report copied." : "Copy failed — clipboard is unavailable here."}
+          </span>
+        )}
         <button onClick={onDraft}>Draft a message</button>
         <button onClick={onResearch}>Research in cloud</button>
         <button onClick={onReset}>Scan another agreement</button>

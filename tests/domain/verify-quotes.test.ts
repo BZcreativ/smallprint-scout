@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { verifyQuotes } from "../../src/domain/verify-quotes";
+import { findQuoteRange, normalizeForMatch, verifyQuotes } from "../../src/domain/verify-quotes";
 import type { Finding, TriageResult } from "../../src/domain/types";
 
 const src = `All prepaid annual fees are non-refundable, and no prorated credits will be issued.`;
@@ -18,3 +18,19 @@ test("flags paraphrase but keeps its text", () => { const r = verifyQuotes({ ...
 test("rejects quotes shorter than 8 chars", () => expect(verifyQuotes({ ...base, findings: [f("fees")] }, src).findings[0].quoteVerified).toBe(false));
 test("caps findings at 3", () => expect(verifyQuotes({ ...base, findings: [1, 2, 3, 4].map(() => f("x")) }, src).findings).toHaveLength(3));
 test("verifies key date source quotes", () => expect(verifyQuotes({ ...base, findings: [], keyDates: [{ event: "e", dateOrTrigger: "d", sourceQuote: "no prorated credits", sourceVerified: false }] }, src).keyDates[0].sourceVerified).toBe(true));
+
+const quote = "prepaid annual fees are non-refundable";
+test("findQuoteRange finds the exact offsets of an exact match", () =>
+  expect(findQuoteRange(src, quote)).toEqual({ start: src.indexOf(quote), end: src.indexOf(quote) + quote.length }));
+
+test("findQuoteRange survives curly quotes, dashes and collapsed whitespace", () => {
+  const fancy = `All prepaid annual ‘fees’\nare non–refundable, and no prorated credits will be issued.`;
+  const range = findQuoteRange(fancy, "prepaid annual 'fees' are non-refundable");
+  expect(range).not.toBeNull();
+  expect(normalizeForMatch(fancy.slice(range!.start, range!.end))).toBe("prepaid annual 'fees' are non-refundable");
+});
+
+test("findQuoteRange returns null for a paraphrase or too-short quote", () => {
+  expect(findQuoteRange(src, "fees cannot be refunded")).toBeNull();
+  expect(findQuoteRange(src, "fees")).toBeNull();
+});
