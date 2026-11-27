@@ -8,6 +8,7 @@ import {
 import { firebaseApp } from "./app";
 import { triageSchema } from "../domain/schema";
 import { DEFAULT_CLOUD_MODEL, getCloudModelName, initRemoteConfig } from "./remote-config";
+export { CLOUD_TIMEOUT_MS, isTransientCloudError, timed, withCloudFallback } from "./cloud-fallback";
 
 // The five models the app uses, one per inference path (docs/spec.md §4.3).
 //
@@ -159,6 +160,17 @@ function createCloudModels(cloudModel: string) {
     },
   });
 
+  const groundedFallback = getGenerativeModel(ai, {
+    mode: InferenceMode.ONLY_IN_CLOUD,
+    inCloudParams: {
+      model: "gemini-3.5-flash-lite",
+      tools: [{ googleSearch: {} }],
+      generationConfig: {
+        temperature: 0.2,
+      },
+    },
+  });
+
   const draftHybrid = getGenerativeModel(ai, {
     mode: InferenceMode.PREFER_ON_DEVICE,
     onDeviceParams: { createOptions: textCreateOptions() },
@@ -167,6 +179,27 @@ function createCloudModels(cloudModel: string) {
       generationConfig: {
         temperature: 0.2,
         thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+      },
+    },
+  });
+
+  const draftCloud = getGenerativeModel(ai, {
+    mode: InferenceMode.ONLY_IN_CLOUD,
+    inCloudParams: {
+      model: cloudModel,
+      generationConfig: {
+        temperature: 0.2,
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+      },
+    },
+  });
+
+  const draftCloudFallback = getGenerativeModel(ai, {
+    mode: InferenceMode.ONLY_IN_CLOUD,
+    inCloudParams: {
+      model: "gemini-3.5-flash-lite",
+      generationConfig: {
+        temperature: 0.2,
       },
     },
   });
@@ -199,7 +232,16 @@ function createCloudModels(cloudModel: string) {
     },
   });
 
-  return { hybrid, grounded, draftHybrid, cloudTriage, cloudTriageFallback };
+  return {
+    hybrid,
+    grounded,
+    groundedFallback,
+    draftHybrid,
+    draftCloud,
+    draftCloudFallback,
+    cloudTriage,
+    cloudTriageFallback,
+  };
 }
 
 export function createModels(cloudModel: string = DEFAULT_CLOUD_MODEL) {

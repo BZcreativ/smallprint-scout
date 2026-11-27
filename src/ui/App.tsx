@@ -6,7 +6,7 @@ import { DOCUMENT_TYPES, toScanSummary, type ScanSummary } from "../domain/scan-
 import { ScanParseError } from "../domain/parse-result";
 import { quotaDetail, rateLimitHint, runFirstPassScan, runLongScan, type ScanEnvelope } from "../firebase/scan";
 import { SINGLE_PASS_MAX } from "../domain/input";
-import { models, slimResponseConstraint } from "../firebase/models";
+import { CLOUD_TIMEOUT_MS, models, slimResponseConstraint, timed, withCloudFallback } from "../firebase/models";
 import { getDeviceStatus, initDeviceModel, type DeviceStatus } from "../firebase/device";
 import { runCloudLegalResearch, type CloudResearch } from "../firebase/research";
 import { JURISDICTION_LABELS, type JurisdictionId } from "../domain/types";
@@ -180,25 +180,6 @@ async function localFallbackGenerate(text: string) {
   }
 }
 
-// Every cloud request also runs a reCAPTCHA Enterprise execute (the App Check
-// limited-use token) INSIDE the request's own timeout window, and in Firefox
-// that verify alone can take 20-30s. 45s caps starved the model leg; 90s
-// leaves it a full minute.
-const CLOUD_TIMEOUT_MS = 90_000;
-
-// "Timeout has expired." from @firebase/ai does not say whether the reCAPTCHA
-// verify or the model call consumed the window, so each step logs its own
-// duration and failure for diagnosis.
-async function timed<T>(step: string, call: () => Promise<T>): Promise<T> {
-  const started = performance.now();
-  try {
-    return await call();
-  } catch (e) {
-    console.warn(`[SmallPrint] ${step} failed after ${Math.round(performance.now() - started)}ms:`, e);
-    throw e;
-  }
-}
-
 async function runScan(text: string, route: ScanRoute) {
     setBusy(true);
     setScanError(null);
@@ -233,19 +214,11 @@ async function runScan(text: string, route: ScanRoute) {
                   console.warn("[SmallPrint] On-device leg failed; falling back to the cloud.", deviceErr);
                 }
               }
-              try {
-                return await timed("cloudTriage", () =>
-                  models.cloudTriage.generateContent(prompt, { timeout: CLOUD_TIMEOUT_MS }),
-                );
-              } catch (cloudErr) {
-                const msg = cloudErr instanceof Error ? cloudErr.message : "";
-                if (/500|502|503|504|429|quota|deadline expired|unavailable|high demand|overloaded|internal|timeout|abort/i.test(msg)) {
-                  return await timed("cloudTriageFallback", () =>
-                    models.cloudTriageFallback.generateContent(prompt, { timeout: CLOUD_TIMEOUT_MS }),
-                  );
-                }
-                throw cloudErr;
-              }
+              return await withCloudFallback(
+                "cloudTriage",
+                () => models.cloudTriage.generateContent(prompt, { timeout: CLOUD_TIMEOUT_MS }),
+                () => models.cloudTriageFallback.generateContent(prompt, { timeout: CLOUD_TIMEOUT_MS }),
+              );
             };
       // A truncated on-device answer is retried on the slim schema (local) or
       // on cloudTriageFallback (hybrid), not by re-asking the exact same way.
@@ -297,11 +270,16 @@ async function runScan(text: string, route: ScanRoute) {
     setCanRetry(false);
     try {
       const research = await runCloudLegalResearch(redactedText, jurisdiction, (prompt) =>
-        models.grounded.generateContent(prompt),
+        withCloudFallback(
+          "grounded",
+          () => models.grounded.generateContent(prompt, { timeout: CLOUD_TIMEOUT_MS }),
+          () => models.groundedFallback.generateContent(prompt, { timeout: CLOUD_TIMEOUT_MS }),
+        ),
       );
       setScreen({ name: "research", source, redactedText, jurisdiction, research, scan });
     } catch (e) {
-      setScanError(rateLimitHint(e) ?? "Grounded cloud research failed. You can try again.");
+      const detail = quotaDetail(e);
+      setScanError(`${rateLimitHint(e) ?? "Grounded cloud research failed. You can try again."}${detail}`);
     } finally {
       setBusy(false);
     }

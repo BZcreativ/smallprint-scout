@@ -3,7 +3,8 @@ import { buildDraftPrompt, type DraftKind } from "../domain/drafts";
 import { redact } from "../domain/redact";
 import type { Finding } from "../domain/types";
 import type { DeviceStatus } from "../firebase/device";
-import { models } from "../firebase/models";
+import { CLOUD_TIMEOUT_MS, models, withCloudFallback } from "../firebase/models";
+import { rateLimitHint } from "../firebase/scan";
 
 // The copyable action drafts.
 //
@@ -63,11 +64,15 @@ export function DraftEditor({ findings, context, deviceStatus, onBack }: DraftEd
     setStatus(null);
 
     try {
-      const res = await models.draftHybrid.generateContent(pending.prompt);
+      const res = await withCloudFallback(
+        "draftCloud",
+        () => models.draftCloud.generateContent(pending.prompt, { timeout: CLOUD_TIMEOUT_MS }),
+        () => models.draftCloudFallback.generateContent(pending.prompt, { timeout: CLOUD_TIMEOUT_MS }),
+      );
       setDraftText(res.response.text());
       setPending(null);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "The cloud draft failed. Try again.");
+      setStatus(rateLimitHint(error) ?? (error instanceof Error ? error.message : "The cloud draft failed. Try again."));
     } finally {
       setBusy(false);
     }
