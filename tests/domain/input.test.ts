@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { chunkText, MAX_LENGTH, validateInput } from "../../src/domain/input";
+import { chunkText, MAX_LENGTH, prioritizeChunks, scoreChunkRiskSignals, validateInput } from "../../src/domain/input";
 
 test("rejects input under 80 chars", () => expect(validateInput("short")).toEqual({ ok: false, message: "Paste at least 80 characters (you have 5)." }));
 test("rejects input over the hard cap with its length", () =>
@@ -39,4 +39,74 @@ test("chunkText backs up to the last paragraph break in the window", () => {
     [para("a"), para("b"), para("c")].join("\n\n"),
     [para("d"), para("e")].join("\n\n"),
   ]);
+});
+
+// --- scoreChunkRiskSignals -------------------------------------------------
+
+test("scoreChunkRiskSignals returns 0 for text with no consumer/privacy risk signals", () => {
+  expect(scoreChunkRiskSignals("")).toBe(0);
+  expect(scoreChunkRiskSignals("Section 1. We thank you for reading this background clause.")).toBe(0);
+});
+
+test("scoreChunkRiskSignals counts a single risk signal", () => {
+  expect(scoreChunkRiskSignals("You may cancel at any time.")).toBe(1);
+});
+
+test("scoreChunkRiskSignals is case-insensitive", () => {
+  expect(scoreChunkRiskSignals("CANCEL anytime")).toBe(1);
+  expect(scoreChunkRiskSignals("Non-Refundable")).toBe(scoreChunkRiskSignals("non-refundable"));
+});
+
+test("scoreChunkRiskSignals counts distinct signals, not repeated occurrences", () => {
+  expect(scoreChunkRiskSignals("cancel cancel CANCEL")).toBe(1);
+});
+
+test("scoreChunkRiskSignals counts each distinct signal once", () => {
+  // fee + price + refund + non-refundable + arbitrat + class action + biometric + train + third part + advertis
+  const chunk =
+    "A fee applies at the price listed; no refunds, non-refundable. " +
+    "Disputes go to arbitration and class action is waived. " +
+    "We collect biometric data and use it to train models shared with third parties for advertising.";
+  expect(scoreChunkRiskSignals(chunk)).toBe(10);
+});
+
+// --- prioritizeChunks ------------------------------------------------------
+
+test("prioritizeChunks orders a risky chunk before filler", () => {
+  const filler = "Section 1. We thank you for choosing our services. This clause is general background.";
+  const risky =
+    "You authorise automatic renewal; cancellation requires 90 days notice; no refunds; arbitration is required.";
+  const ordered = prioritizeChunks([filler, risky]);
+  expect(ordered).toEqual([risky, filler]);
+});
+
+test("prioritizeChunks preserves original order on ties", () => {
+  // every chunk scores 0
+  expect(prioritizeChunks(["first", "second", "third"])).toEqual(["first", "second", "third"]);
+  // equal non-zero scores keep original order
+  expect(prioritizeChunks(["cancel", "refund"])).toEqual(["cancel", "refund"]);
+});
+
+test("prioritizeChunks sorts stably from highest score to lowest", () => {
+  const filler = "plain background text";
+  const oneSignal = "you may cancel";
+  const twoSignals = "a fee applies and you may cancel";
+  const ordered = prioritizeChunks([filler, oneSignal, twoSignals, filler]);
+  expect(ordered).toEqual([twoSignals, oneSignal, filler, filler]);
+});
+
+test("prioritizeChunks returns a shallow copy and does not mutate the input", () => {
+  const single = ["only one chunk"];
+  const singleOut = prioritizeChunks(single);
+  expect(singleOut).toEqual(single);
+  expect(singleOut).not.toBe(single);
+
+  const empty: string[] = [];
+  expect(prioritizeChunks(empty)).toEqual([]);
+  expect(prioritizeChunks(empty)).not.toBe(empty);
+
+  const input = ["cancel", "plain", "a fee applies"];
+  const snapshot = [...input];
+  prioritizeChunks(input);
+  expect(input).toEqual(snapshot);
 });

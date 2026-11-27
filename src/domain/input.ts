@@ -83,3 +83,50 @@ export function chunkText(text: string, max: number = SINGLE_PASS_MAX): string[]
   }
   return chunks;
 }
+
+// Consumer/privacy risk signals that make a chunk worth scanning first on a
+// long policy. Matched as case-insensitive substrings; each listed signal
+// counts at most once per chunk, so a chunk's score is how many distinct
+// signals it contains, not how often any one appears.
+const CONSUMER_RISK_SIGNALS = [
+  "auto-renew",
+  "renew",
+  "cancel",
+  "fee",
+  "price",
+  "refund",
+  "non-refundable",
+  "arbitrat",
+  "class action",
+  "biometric",
+  "train",
+  "third part",
+  "advertis",
+  "legitimate interest",
+  "transfer",
+  "opt-out",
+  "unilateral",
+  "modify",
+  "binding",
+] as const;
+
+// Number of distinct consumer/privacy risk signals in a chunk (case-insensitive).
+export function scoreChunkRiskSignals(chunk: string): number {
+  const haystack = chunk.toLowerCase();
+  let score = 0;
+  for (const signal of CONSUMER_RISK_SIGNALS) {
+    if (haystack.includes(signal)) score++;
+  }
+  return score;
+}
+
+// Stable ordering from highest risk-signal score to lowest; original order is
+// preserved on ties. The chunks themselves are returned unchanged (verbatim
+// slices) and the input array is not mutated. A shallow copy is returned.
+export function prioritizeChunks(chunks: string[]): string[] {
+  if (chunks.length <= 1) return chunks.slice();
+  return chunks
+    .map((chunk, index) => ({ chunk, index, score: scoreChunkRiskSignals(chunk) }))
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .map((entry) => entry.chunk);
+}
