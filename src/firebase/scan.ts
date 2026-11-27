@@ -148,13 +148,15 @@ export async function runLongScan(
   text: string,
   generate: GenerateFn,
   retryGenerate: GenerateFn = generate,
+  onProgress?: (current: number, total: number) => void,
 ): Promise<ScanEnvelope> {
   const chunks = chunkText(text, SINGLE_PASS_MAX);
   const started = performance.now();
 
   const envelopes: ScanEnvelope[] = [];
-  for (const chunk of chunks) {
-    envelopes.push(await runFirstPassScan(chunk, generate, retryGenerate));
+  for (let i = 0; i < chunks.length; i++) {
+    onProgress?.(i + 1, chunks.length);
+    envelopes.push(await runFirstPassScan(chunks[i], generate, retryGenerate));
   }
 
   // Never assume on-device: one chunk that fell back to the cloud (or one

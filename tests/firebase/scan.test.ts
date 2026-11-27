@@ -184,3 +184,21 @@ test("runLongScan reports IN_CLOUD if any chunk left the device", async () => {
   const r = await runLongScan(text, gen);
   expect(r.route).toBe("IN_CLOUD");
 });
+
+test("runLongScan reports section progress sequentially", async () => {
+  const q1 = "All prepaid annual fees are non-refundable";
+  const q2 = "We may change the fees at any time upon notice";
+  const part = (quote: string, ch: string) => `${quote}. ${ch.repeat(4000)}`;
+  const text = `${part(q1, "x")}\n\n${part(q2, "y")}`;
+
+  const gen = vi.fn(async (prompt: string) => ({
+    response: { text: () => triageJson(prompt.includes(q1) ? q1 : q2), inferenceSource: "on_device" },
+  }));
+  const progress: [number, number][] = [];
+
+  await runLongScan(text, gen, gen, (current, total) => progress.push([current, total]));
+  expect(progress).toEqual([
+    [1, 2],
+    [2, 2],
+  ]);
+});

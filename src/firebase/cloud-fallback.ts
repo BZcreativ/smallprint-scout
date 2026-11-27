@@ -4,6 +4,13 @@
 // leaves it a full minute.
 export const CLOUD_TIMEOUT_MS = 90_000;
 
+const DAILY_QUOTA_COOLDOWN_MS = 10 * 60 * 1000;
+let primaryDailyQuotaUntil = 0;
+
+export function resetCloudFallbackState(): void {
+  primaryDailyQuotaUntil = 0;
+}
+
 // "Timeout has expired." from @firebase/ai does not say whether the reCAPTCHA
 // verify or the model call consumed the window, so each step logs its own
 // duration and failure for diagnosis.
@@ -17,6 +24,11 @@ export async function timed<T>(step: string, call: () => Promise<T>): Promise<T>
   }
 }
 
+export function isDailyQuotaError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /GenerateRequestsPerDay|PerDay.*FreeTier|requests per day limit exceeded/i.test(msg);
+}
+
 export function isTransientCloudError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
   return /500|502|503|504|429|quota|deadline expired|unavailable|high demand|overloaded|internal|timeout|abort/i.test(
@@ -25,15 +37,23 @@ export function isTransientCloudError(err: unknown): boolean {
 }
 
 // Runs the primary cloud model call with timing, and falls back to the secondary
-// model on transient server, quota, or timeout errors.
+// model on transient server, quota, or timeout errors. When a daily quota limit
+// is hit, subsequent calls in this session skip straight to the fallback model
+// so we do not burn an extra reCAPTCHA Enterprise round trip before falling back.
 export async function withCloudFallback<T>(
   step: string,
   primary: () => Promise<T>,
   fallback: () => Promise<T>,
 ): Promise<T> {
+  if (Date.now() < primaryDailyQuotaUntil) {
+    return await timed(`${step}Fallback`, fallback);
+  }
   try {
     return await timed(step, primary);
   } catch (err) {
+    if (isDailyQuotaError(err)) {
+      primaryDailyQuotaUntil = Date.now() + DAILY_QUOTA_COOLDOWN_MS;
+    }
     if (isTransientCloudError(err)) {
       return await timed(`${step}Fallback`, fallback);
     }

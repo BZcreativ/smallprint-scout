@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MAX_LENGTH, validateInput } from "../domain/input";
+import { MAX_LENGTH, SINGLE_PASS_MAX, chunkText, validateInput } from "../domain/input";
 import type { DeviceStatus } from "../firebase/device";
 
 // The first screen: paste an agreement, or load one of the seeded samples.
@@ -21,6 +21,7 @@ export interface InputScreenProps {
   onPrivateScan: (text: string) => void;
   onCloudScan: (text: string) => void;
   busy?: boolean;
+  progressLabel?: string | null;
 }
 
 export function InputScreen({
@@ -30,15 +31,19 @@ export function InputScreen({
   onPrivateScan,
   onCloudScan,
   busy = false,
+  progressLabel = null,
 }: InputScreenProps) {
   const [sampleError, setSampleError] = useState<string | null>(null);
   const [loadingSample, setLoadingSample] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
+  const trimmedLength = text.trim().length;
   const validation = validateInput(text);
-  const hasText = text.trim().length > 0;
+  const hasText = trimmedLength > 0;
   const invalid = hasText && !validation.ok;
-  const overLimit = text.trim().length > MAX_LENGTH;
+  const overLimit = trimmedLength > MAX_LENGTH;
+  const sectionCount =
+    hasText && !overLimit && trimmedLength > SINGLE_PASS_MAX ? chunkText(text.trim(), SINGLE_PASS_MAX).length : 0;
 
   async function loadSample(id: string) {
     setSampleError(null);
@@ -118,6 +123,11 @@ export function InputScreen({
           Tip: that is above the scan limit — paste the sections that matter, not the whole document.
         </p>
       )}
+      {sectionCount > 1 && (
+        <p className="hint">
+          Long agreement ({sectionCount} sections on-device, or 1 pass in cloud).
+        </p>
+      )}
 
       <div className="actions">
         <button
@@ -134,13 +144,28 @@ export function InputScreen({
         >
           Scan with cloud (redacted)
         </button>
+        {hasText && (
+          <button
+            type="button"
+            onClick={() => {
+              onTextChange("");
+              setFormError(null);
+              setSampleError(null);
+            }}
+            disabled={busy}
+          >
+            Clear
+          </button>
+        )}
       </div>
 
       {deviceStatus !== "available" && (
         <p className="hint">The private scan needs the on-device model. The cloud scan works without it.</p>
       )}
       {busy && (
-        <p className="hint">Scanning… long documents are read section by section and can take a minute.</p>
+        <p className="hint" aria-live="polite">
+          {progressLabel ?? "Scanning…"}
+        </p>
       )}
     </section>
   );

@@ -1,7 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider, type AppCheck } from "firebase/app-check";
 import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
 
 // Values come from `npx -y firebase-tools@latest apps:sdkconfig WEB <APP_ID> --project smallprint-scout`,
 // copied into .env.local (gitignored). See .env.example.
@@ -16,9 +15,6 @@ const firebaseConfig = {
 
 export const firebaseApp = initializeApp(firebaseConfig);
 export const auth = getAuth(firebaseApp);
-// Empty = the "(default)" database. Set VITE_FIRESTORE_DATABASE_ID for a named (e.g. Enterprise) database.
-const databaseId = import.meta.env.VITE_FIRESTORE_DATABASE_ID;
-export const db = databaseId ? getFirestore(firebaseApp, databaseId) : getFirestore(firebaseApp);
 
 let appCheckInstance: AppCheck | undefined;
 

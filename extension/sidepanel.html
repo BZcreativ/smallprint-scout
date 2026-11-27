@@ -5,6 +5,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>SmallPrint Scout</title>
     <style>
+      :root {
+        --sp-bg: #fbfaf7;
+        --sp-fg: #1f2933;
+        --sp-muted: #5f6b7a;
+        --sp-line: #d9dde3;
+        --sp-panel: #ffffff;
+        --sp-accent: #1f5f8b;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --sp-bg: #161615;
+          --sp-fg: #ecebe6;
+          --sp-muted: #a8a69e;
+          --sp-line: #3a3a37;
+          --sp-panel: #20201e;
+          --sp-accent: #79b4dd;
+        }
+      }
+
       html,
       body {
         height: 100%;
@@ -15,7 +35,8 @@
         display: flex;
         flex-direction: column;
         font: 14px/1.4 system-ui, sans-serif;
-        color: #1f2933;
+        color: var(--sp-fg);
+        background: var(--sp-bg);
       }
 
       header {
@@ -23,7 +44,8 @@
         align-items: center;
         gap: 8px;
         padding: 8px 10px;
-        border-bottom: 1px solid #d9dde3;
+        border-bottom: 1px solid var(--sp-line);
+        background: var(--sp-panel);
       }
 
       h1 {
@@ -33,7 +55,18 @@
       }
 
       button {
-        padding: 6px 10px;
+        padding: 5px 10px;
+        font: inherit;
+        color: var(--sp-accent);
+        background: transparent;
+        border: 1px solid var(--sp-accent);
+        border-radius: 6px;
+        cursor: pointer;
+      }
+
+      button:focus-visible {
+        outline: 2px solid var(--sp-accent);
+        outline-offset: 2px;
       }
 
       iframe {
@@ -45,21 +78,23 @@
       .toggle {
         font-size: 12px;
         white-space: nowrap;
+        cursor: pointer;
       }
 
       #detect-hint {
         margin: 0;
         padding: 5px 10px;
         font-size: 11px;
-        color: #5f6b7a;
-        border-bottom: 1px solid #d9dde3;
+        color: var(--sp-muted);
+        border-bottom: 1px solid var(--sp-line);
       }
 
       #candidates {
         max-height: 26vh;
         overflow-y: auto;
         padding: 6px 10px;
-        border-bottom: 1px solid #d9dde3;
+        border-bottom: 1px solid var(--sp-line);
+        background: var(--sp-panel);
       }
 
       #candidates h2 {
@@ -92,7 +127,8 @@
       #candidate-list .kind {
         font-size: 10px;
         padding: 1px 4px;
-        border: 1px solid #d9dde3;
+        color: var(--sp-muted);
+        border: 1px solid var(--sp-line);
         border-radius: 4px;
       }
 

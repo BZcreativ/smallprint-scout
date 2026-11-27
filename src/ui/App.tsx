@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useState } from "react";
 import type { User } from "firebase/auth";
 import { signInWithGoogle, signOutUser, useAuthUser } from "../firebase/auth";
-import { clearScanHistory, listRecentScans, saveScanSummary, type SavedScan } from "../firebase/scans";
+import type { SavedScan } from "../firebase/scans";
 import { DOCUMENT_TYPES, toScanSummary, type ScanSummary } from "../domain/scan-summary";
 import { ScanParseError } from "../domain/parse-result";
 import { quotaDetail, rateLimitHint, runFirstPassScan, runLongScan, type ScanEnvelope } from "../firebase/scan";
@@ -11,13 +11,14 @@ import { getDeviceStatus, initDeviceModel, type DeviceStatus } from "../firebase
 import { runCloudLegalResearch, type CloudResearch } from "../firebase/research";
 import { JURISDICTION_LABELS, type JurisdictionId } from "../domain/types";
 import { acceptsMessage } from "../domain/extension-message";
-import { DraftEditor } from "./DraftEditor";
-import { EvalRunner } from "./EvalRunner";
 import { InputScreen } from "./InputScreen";
 import { ModelStatus } from "./ModelStatus";
-import { RedactionGate } from "./RedactionGate";
-import { ResearchScreen } from "./ResearchScreen";
-import { ResultsScreen } from "./ResultsScreen";
+
+const DraftEditor = lazy(() => import("./DraftEditor"));
+const EvalRunner = lazy(() => import("./EvalRunner").then((m) => ({ default: m.EvalRunner })));
+const RedactionGate = lazy(() => import("./RedactionGate"));
+const ResearchScreen = lazy(() => import("./ResearchScreen"));
+const ResultsScreen = lazy(() => import("./ResultsScreen"));
 
 // The app is a small screen state machine. Every screen knows how it was
 // reached, so the back buttons and the retry button always have something
@@ -40,6 +41,7 @@ export default function App() {
   const [screen, setScreen] = useState<Screen>({ name: "input" });
   const [inputText, setInputText] = useState("");
   const [busy, setBusy] = useState(false);
+  const [scanProgress, setScanProgress] = useState<string | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
   const [canRetry, setCanRetry] = useState(false);
   const [lastAttempt, setLastAttempt] = useState<{ text: string; route: ScanRoute } | null>(null);
@@ -111,6 +113,7 @@ export default function App() {
       if (!user) return;
       const env = scan;
       try {
+        const { saveScanSummary } = await import("../firebase/scans");
         await saveScanSummary(
           user.uid,
           toScanSummary({
@@ -182,6 +185,7 @@ async function localFallbackGenerate(text: string) {
 
 async function runScan(text: string, route: ScanRoute) {
     setBusy(true);
+    setScanProgress(route === "local" ? "Scanning on this device…" : "Scanning with Google Gemini…");
     setScanError(null);
     setCanRetry(false);
     setLastAttempt({ text, route });
@@ -232,7 +236,9 @@ async function runScan(text: string, route: ScanRoute) {
       // limit on any real policy.
       const scan =
         route === "local" && text.length > SINGLE_PASS_MAX
-          ? await runLongScan(text, generate, retry)
+          ? await runLongScan(text, generate, retry, (current, total) =>
+              setScanProgress(`Scanning section ${current} of ${total} on this device…`),
+            )
           : await runFirstPassScan(text, generate, retry);
       setScreen({ name: "results", source: text, scan });
       await saveSummary(scan);
@@ -261,6 +267,7 @@ async function runScan(text: string, route: ScanRoute) {
       }
     } finally {
       setBusy(false);
+      setScanProgress(null);
     }
   }
 
@@ -282,11 +289,14 @@ async function runScan(text: string, route: ScanRoute) {
       setScanError(`${rateLimitHint(e) ?? "Grounded cloud research failed. You can try again."}${detail}`);
     } finally {
       setBusy(false);
+      setScanProgress(null);
     }
   }
 
   const isEvalMode =
     typeof window !== "undefined" && new URLSearchParams(window.location.search).get("eval") === "1";
+  const isEmbedded =
+    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("embed") === "1";
 
   function renderScreen() {
     if (isEvalMode) {
@@ -307,6 +317,7 @@ async function runScan(text: string, route: ScanRoute) {
               setScreen({ name: "gate", purpose: "hybrid", text });
             }}
             busy={busy}
+            progressLabel={scanProgress}
           />
         );
 
@@ -396,9 +407,9 @@ async function runScan(text: string, route: ScanRoute) {
   }
 
   return (
-    <main className="page">
+    <main className={isEmbedded ? "page embedded" : "page"}>
       <header className="bar">
-        <h1>SmallPrint Scout</h1>
+        {!isEmbedded && <h1>SmallPrint Scout</h1>}
         {user === undefined ? null : user ? (
           <span className="who">
             {user.displayName ?? user.email}
@@ -412,7 +423,7 @@ async function runScan(text: string, route: ScanRoute) {
       {error && <p role="alert" className="error">{error}</p>}
 
       {user === undefined && <p>Loading…</p>}
-      {user === null && (
+      {user === null && !isEmbedded && (
         <p>Sign in to keep a private history of your scans. Scanning itself will work without an account.</p>
       )}
 
@@ -442,7 +453,7 @@ async function runScan(text: string, route: ScanRoute) {
         </div>
       )}
 
-      {renderScreen()}
+      <Suspense fallback={<p className="hint">Loading…</p>}>{renderScreen()}</Suspense>
 
       {user && <ScanHistory user={user} onError={setError} refreshKey={historyVersion} />}
 
@@ -472,18 +483,32 @@ function ScanHistory({
   const [scans, setScans] = useState<SavedScan[] | null>(null);
 
   const refresh = useCallback(() => {
-    listRecentScans(user.uid).then(setScans, (e: Error) => onError(e.message));
+    void import("../firebase/scans")
+      .then(({ listRecentScans }) => listRecentScans(user.uid))
+      .then(setScans, (e: Error) => onError(e.message));
   }, [user.uid, onError]);
 
   useEffect(refresh, [refresh, refreshKey]);
 
   const saveSample = () =>
-    saveScanSummary(
-      user.uid,
-      toScanSummary({ documentType: "SUBSCRIPTION_TERMS", overallRisk: "HIGH", findingCategories: ["RENEWAL", "REFUND", "RENEWAL"], route: "ON_DEVICE" }),
-    ).then(refresh, (e: Error) => onError(e.message));
+    import("../firebase/scans")
+      .then(({ saveScanSummary }) =>
+        saveScanSummary(
+          user.uid,
+          toScanSummary({
+            documentType: "SUBSCRIPTION_TERMS",
+            overallRisk: "HIGH",
+            findingCategories: ["RENEWAL", "REFUND", "RENEWAL"],
+            route: "ON_DEVICE",
+          }),
+        ),
+      )
+      .then(refresh, (e: Error) => onError(e.message));
 
-  const clear = () => clearScanHistory(user.uid).then(refresh, (e: Error) => onError(e.message));
+  const clear = () =>
+    import("../firebase/scans")
+      .then(({ clearScanHistory }) => clearScanHistory(user.uid))
+      .then(refresh, (e: Error) => onError(e.message));
 
   return (
     <section>
