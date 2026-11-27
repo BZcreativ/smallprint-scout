@@ -33,7 +33,7 @@ function normalizeWithMap(s: string): { text: string; map: number[] } {
       if (/\s/.test(out) && text.endsWith(" ")) continue;
       const c = /\s/.test(out) ? " " : out;
       text += c;
-      map.push(offset);
+      for (let k = 0; k < c.length; k++) map.push(offset);
     }
   }
   return { text, map };
@@ -53,7 +53,9 @@ export function findQuoteRange(source: string, quote: string): { start: number; 
   const { text, map } = normalizeWithMap(source);
   const at = text.indexOf(target);
   if (at === -1) return null;
-  return { start: map[at], end: map[at + target.length - 1] + 1 };
+  const lastOffset = map[at + target.length - 1];
+  const step = (source.codePointAt(lastOffset) ?? 0) > 0xffff ? 2 : 1;
+  return { start: map[at], end: lastOffset + step };
 }
 
 function isInSource(quote: string, normalizedSource: string): boolean {

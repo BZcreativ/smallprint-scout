@@ -34,3 +34,10 @@ test("findQuoteRange returns null for a paraphrase or too-short quote", () => {
   expect(findQuoteRange(src, "fees cannot be refunded")).toBeNull();
   expect(findQuoteRange(src, "fees")).toBeNull();
 });
+
+test("findQuoteRange keeps trailing surrogate pairs intact", () => {
+  const emojiSrc = "Fees are non-refundable 🔒 unless required by law.";
+  const range = findQuoteRange(emojiSrc, "Fees are non-refundable 🔒");
+  expect(range).not.toBeNull();
+  expect(emojiSrc.slice(range!.start, range!.end)).toBe("Fees are non-refundable 🔒");
+});

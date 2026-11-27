@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SmallPrint Scout",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Scan consumer agreements on-device with Gemini Nano before you sign.",
   "permissions": ["activeTab", "scripting", "sidePanel", "contextMenus", "storage", "tabs"],
   "optional_host_permissions": ["*://*/*"],
